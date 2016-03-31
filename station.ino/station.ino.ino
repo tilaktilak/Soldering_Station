@@ -34,8 +34,7 @@ void setup() {
   // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
   // Print a message to the LCD.
-  lcd.print("Starting up");
-
+  lcd.print("Starting up ...");
   pinMode(temp,INPUT);
   pinMode(A,INPUT);
   pinMode(B,INPUT);
@@ -46,7 +45,6 @@ void setup() {
 
 void loop() {
   float consigne = 280.0;
-
   
   // set the cursor to column 0, line 1
   // (note: line 1 is the second row, since counting begins with 0):
@@ -56,13 +54,20 @@ void loop() {
   static long oldPosition = -999;
  
   if(digitalRead(C)==1){ // If we press button
-    long newPosition = myEnc.read();
-    if (newPosition != oldPosition) {
-      oldPosition = newPosition;
-      Consigne += 0.01 * newPosition; // Set new consigne
+    while(digitalRead(C)==1); // Anti-bounce
+    while(digitalRead(C)!=1){
+      lcd.setCursor(0, 1);
+      lcd.print("Set New Value :");
+      long newPosition = myEnc.read();
+      if (newPosition != oldPosition) {
+        oldPosition = newPosition;
+        Consigne += 0.01 * newPosition; // Set new consigne
+      }
+      lcd.print(Consigne);
     }
+    while(digitalRead(C)==1); // Anti-bounce
   }
-    lcd.print(Consigne);
+
     static float old_error = 0;
     static old_time = 0;
   
