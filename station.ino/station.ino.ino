@@ -33,7 +33,10 @@ LiquidCrystal lcd(12, 11, 7, 8, 4, 5);
 Encoder myEnc(DT,CLK);
 
 
+#define DEFAULT_TEMP 100
 void setup() {
+    Serial.begin(115200);
+
     pinMode(MOS,OUTPUT);
     // initialize timer1
     noInterrupts();           // disable all interrupts
@@ -44,9 +47,9 @@ void setup() {
     // Set FastPWM with OCR1A on TOP, CLEAR on Compare + Set on BOTTOM
     // Prescaler 256
     TCCR1A = _BV(COM1A1) | _BV(COM1B1) | _BV(WGM10) | _BV(WGM11);
-    TCCR1B = _BV(WGM12) | _BV(WGM13) | _BV(CS12);
+    TCCR1B = _BV(WGM12) | _BV(WGM13) | _BV(CS11) | _BV(CS10);
 
-    OCR1B = 300;
+    OCR1B = 0;//156;//10*3125/100;
     OCR1A = 3125;
     interrupts();             // enable all interrupts
 
@@ -55,6 +58,7 @@ void setup() {
     // Print a message to the LCD.
     lcd.print("Starting up ...");
     pinMode(temp,INPUT);
+    digitalWrite(temp,LOW);
     pinMode(CLK,INPUT);
     pinMode(DT,INPUT);
     pinMode(SW,INPUT);
@@ -62,6 +66,8 @@ void setup() {
     // Initiate Pull-up on switch input
     digitalWrite(SW,HIGH);
 
+    // Initialize encoder value to default
+    myEnc.write(DEFAULT_TEMP<<2);
 }
 
 //ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
@@ -69,19 +75,39 @@ void setup() {
 //      digitalWrite(MOS, digitalRead(MOS) ^ 1);   // toggle LED pin
 //}
 
-float old_error,old_time,new_time,dt,new_error,derivative,integral,KP,KI,KD,command;
+float old_error,dt,new_error,derivative,integral,KP,KI,KD,command;
+long new_time,old_time;
+#define TEMP_MAX 480
 
-float get_temp(){
-    int temp = analogRead(temp);
-    return ((float)temp * (5.0f / 1023.0f));
+void set_temp(float temp){
+    int duty_cycle_int = temp * (TEMP_MAX / 100.0f);
+    uint16_t duty_cycle = (uint16_t)(duty_cycle_int) * 31;
+    //lcd.setCursor(9,1);
+    //lcd.print(duty_cycle);
+    noInterrupts();           // disable all interrupts
+    OCR1B = duty_cycle;
+    interrupts();
 }
 
-#define DEFAULT_TEMP 280
+float get_temp(){
+    int i;
+    float avg_temp = 0.0;
+#define AVG_SAMPLE 300
+    if(analogRead(temp)*(5.0f/1024.0f) > 4){ 
+        return -1.0f;
+    }
+    for(i=0;i<AVG_SAMPLE;i++){
+        avg_temp += 600*(5.0f/1024.0f)*analogRead(temp) - 100; //0.5V => 200°C
+    }
+    avg_temp = avg_temp/AVG_SAMPLE;
+    return ((float)avg_temp);
+}
+
 
 uint16_t Consigne = DEFAULT_TEMP;
-uint16_t last_display_update_ms = 0;
+long last_display_update_ms = 0;
 
-
+long time;
 /**
  * @brief MAIN LOOP
  *
@@ -91,9 +117,6 @@ void loop() {
     long oldPosition = -999;
     // Pull-up do not stay setted
     digitalWrite(SW,HIGH);
-
-    // Initialize encoder value to default
-    myEnc.write(DEFAULT_TEMP<<2);
 
     // Setting Mode loop
     if(digitalRead(SW)==0){ // If we press button
@@ -111,44 +134,53 @@ void loop() {
 
     new_time = millis();
     dt = new_time - old_time;
-
+    old_time = new_time;
     // Update display content
-    if(last_display_update_ms + 500 <= new_time){
+    float tempp = get_temp();
+    if(last_display_update_ms + 100 <= new_time){
+        lcd.print("                                               ");
         lcd.setCursor(0, 0);
         lcd.print("Temp : ");
         lcd.print(Consigne);
         lcd.print(" C     ");
         lcd.setCursor(0,1);
-        lcd.print("                   ");
-        lcd.setCursor(0,1);
-        lcd.print(get_temp());
-        lcd.print(" - ");
-        lcd.print(command);
-        old_error = 0;
-        old_time = 0;
-        last_display_update_ms = new_time;
+        //lcd.print("                   ");
+        //lcd.setCursor(0,1);
+        if(tempp< 0.0){
+            lcd.print("No Iron");
+        }
+        else{
+            //lcd.print("           ");
+            lcd.setCursor(0,1);
+            lcd.print(tempp);
+        }
     }
+        //lcd.print(command);
+        last_display_update_ms = new_time;
+        new_error = Consigne - tempp; // Process new error
+        derivative = (new_error-old_error)/(dt/1000);
+        integral += new_error*(dt/1000);
 
-    new_error = Consigne - get_temp(); // Process new error
+        old_error = new_error;
 
-    derivative = (new_error-old_error)/dt;
-    integral += new_error*dt;
+        KP = 0.09;
+        KD = -0.13;
+        KI = 0.0026;
+        command = KP*new_error + KD*derivative + KI*integral;
+    if(command >= 0.0){
+            set_temp(command);
+        }
+        else{
+            set_temp(0.0);
+        }
 
-    old_error = new_error;
+    time += dt;
+    Serial.print(time);
+    Serial.print(";");
+    Serial.println(get_temp());
 
-    KP = 10;
-    KD = 1;
-    KI = 0.1;
-    //command = KP*new_error + KD*derivative + KI*integral;
-    command = Consigne;
-    //set_temp(command);
 
 }
 
-#define TEMP_MAX 480
-void set_temp(float temp){
-    int tension = (int)(temp);// * (255/TEMP_MAX);
-    analogWrite(MOS,tension);
-}
 
 
