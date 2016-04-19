@@ -33,7 +33,7 @@ LiquidCrystal lcd(12, 11, 7, 8, 4, 5);
 Encoder myEnc(DT,CLK);
 
 
-#define DEFAULT_TEMP 100
+#define DEFAULT_TEMP 180
 void setup() {
     Serial.begin(115200);
 
@@ -91,6 +91,7 @@ void set_temp(float temp){
 
 float get_temp(){
     int i;
+    static float lpf_temp;
     float avg_temp = 0.0;
 #define AVG_SAMPLE 300
     if(analogRead(temp)*(5.0f/1024.0f) > 4){ 
@@ -100,6 +101,8 @@ float get_temp(){
         avg_temp += 600*(5.0f/1024.0f)*analogRead(temp) - 100; //0.5V => 200°C
     }
     avg_temp = avg_temp/AVG_SAMPLE;
+#define alpha 0.99f
+    lpf_temp = lpf_temp*alpha + (1.0-alpha)*avg_temp;
     return ((float)avg_temp);
 }
 
@@ -128,8 +131,11 @@ void loop() {
             Consigne = newPosition>>2; // Set new consigne
             lcd.setCursor(11,0);
             lcd.print(Consigne);
+            lcd.print("  ");
         }
         while(digitalRead(SW)==0); // Anti-bounce
+        derivative = 0.0;
+        integral = 0.0;
     }
 
     new_time = millis();
@@ -137,10 +143,10 @@ void loop() {
     old_time = new_time;
     // Update display content
     float tempp = get_temp();
-    if(last_display_update_ms + 100 <= new_time){
+    if(last_display_update_ms + 1000 <= new_time){
         lcd.print("                                               ");
         lcd.setCursor(0, 0);
-        lcd.print("Temp : ");
+        lcd.print("Set  : ");
         lcd.print(Consigne);
         lcd.print(" C     ");
         lcd.setCursor(0,1);
@@ -152,20 +158,27 @@ void loop() {
         else{
             //lcd.print("           ");
             lcd.setCursor(0,1);
+            lcd.print("Temp : ");
             lcd.print(tempp);
+            lcd.print(" C");
         }
+        last_display_update_ms = new_time;
     }
         //lcd.print(command);
-        last_display_update_ms = new_time;
         new_error = Consigne - tempp; // Process new error
         derivative = (new_error-old_error)/(dt/1000);
         integral += new_error*(dt/1000);
 
         old_error = new_error;
 
-        KP = 0.09;
+        /*KP = 0.09; Réglage OK mais pas hyper stable
         KD = -0.13;
-        KI = 0.0026;
+        KI = 0.0026;*/
+
+        KP = 0.17;
+        KD = 0.0; // Rend instable le système mm avec petites valeurs
+        KI = 0.005;
+        // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
         command = KP*new_error + KD*derivative + KI*integral;
     if(command >= 0.0){
             set_temp(command);
