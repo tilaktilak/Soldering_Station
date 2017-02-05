@@ -39,6 +39,22 @@
 #define DT 2
 #define SW 6
 
+void adc_init(void){
+
+    ADCSRA |= ((1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0));    //16Mhz/128 = 125Khz the ADC reference clock
+    ADMUX |= (1<<REFS0); //Voltage reference from Avcc (5v)
+    ADCSRA |= (1<<ADEN); //Turn on ADC
+    ADCSRA |= (1<<ADSC); //Do an initial conversion because this one is the slowest and to ensure that everything is up and running
+}
+
+uint16_t adc_read(void){
+    ADMUX &= 0xF0;                    //Clear the older channel that was read
+    ADMUX |= 0;                //Defines the new ADC channel to be read
+    ADCSRA |= (1<<ADSC);                //Starts a new conversion
+    while(ADCSRA & (1<<ADSC));            //Wait until the conversion is done
+    return ADCW;                    //Returns the ADC value of the chosen channel
+}
+
 void uart_init(void) {
     UBRR0H = UBRRH_VALUE;
     UBRR0L = UBRRL_VALUE;
@@ -73,12 +89,10 @@ FILE uart_output = FDEV_SETUP_STREAM(uart_putchar,
 
 void timer1_init(void){
     // Init Pin PB0 Output, set to 0
-    DDRB |= (1<<DDB0);
-    PORTB &= ~(1<<PORTB0);
+    DDRB |= (1<<DDB2);
+    PORTB &= ~(1<<PORTB2);
 
-    cli();
     // initialize timer1
-    //noInterrupts();           // disable all interrupts
     cli();
     TCCR1A = 0;
     TCCR1B = 0;
@@ -101,6 +115,39 @@ void timer1_init(void){
     OCR1A = 3125;
     sei();             // enable all interrupts
 }
+#define TEMP_MAX 480
+
+void set_temp(float temp){
+    uint16_t duty_cycle;
+    int duty_cycle_int = temp * (TEMP_MAX / 100.0f);
+    // FIXME : Dutycycle not in pourcent but model was made as this
+    //int duty_cycle_int = (int)(temp * (100/TEMP_MAX));
+    duty_cycle = (uint16_t)(duty_cycle_int) * 31;
+    if(duty_cycle>=2500) duty_cycle = 2500;
+    if(duty_cycle<0)    duty_cycle = 0;
+
+    cli();
+    OCR1B = duty_cycle;
+    sei();
+}
+
+float get_temp(void){
+    int i;
+    static float lpf_temp;
+    float avg_temp = 0.0;
+#define AVG_SAMPLE 300
+    if(adc_read()*(5.0f/1024.0f) > 4){
+        return -1.0f;
+    }
+    for(i=0;i<AVG_SAMPLE;i++){
+        avg_temp += 600*(5.0f/1024.0f)*adc_read() - 100; //0.5V => 200°C
+    }
+    avg_temp = avg_temp/AVG_SAMPLE;
+#define alpha 0.99f
+    lpf_temp = lpf_temp*alpha + (1.0-alpha)*avg_temp;
+    return ((float)avg_temp);
+}
+
 
 enum e_state {Update_Consigne,
     Update_Screen,
@@ -147,6 +194,7 @@ ISR (INT1_vect){
     }
 }
 
+
 uint8_t line1[]   = "Starting up ...";
 //uint8_t line2[]   = "";
 void update_screen(void){
@@ -173,9 +221,11 @@ int main(void)
     lcd_write_string_4d(line1);
     printf("Debut\r\n");
     encoder_init();
+    adc_init();
 
     for (;;) {
 
+        printf("%i\n\r",(int)get_temp());
         //printf("COUNT %i\t%i\r\n,",counts,enc_switch_state());
         switch(state){
             case Update_Consigne:
@@ -194,7 +244,6 @@ int main(void)
                 state = Update_Screen;
                 break;
             case Update_Screen:
-                printf("Out\n");
                 state = Process_Commmand;
                 break;
             case Process_Commmand:
