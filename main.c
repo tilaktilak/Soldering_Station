@@ -42,7 +42,7 @@
 void uart_init(void) {
     UBRR0H = UBRRH_VALUE;
     UBRR0L = UBRRL_VALUE;
-    
+
 #if USE_2X
     UCSR0A |= _BV(U2X0);
 #else
@@ -65,9 +65,9 @@ char uart_getchar(FILE *stream) {
 }
 
 FILE uart_output = FDEV_SETUP_STREAM(uart_putchar,
-                                     NULL,
-                                     _FDEV_SETUP_WRITE
-                                     );
+        NULL,
+        _FDEV_SETUP_WRITE
+        );
 
 #define TIMER_FREQ_HZ   1
 
@@ -88,38 +88,122 @@ void timer1_init(void){
     // Prescaler 256
     // Here 64 !
     TCCR1A = _BV(COM1A1)
-            | _BV(COM1B1)
-            | _BV(WGM10)
-            | _BV(WGM11);
+        | _BV(COM1B1)
+        | _BV(WGM10)
+        | _BV(WGM11);
 
     TCCR1B = _BV(WGM12)
-            | _BV(WGM13)
-            | _BV(CS11)
-            | _BV(CS10);
+        | _BV(WGM13)
+        | _BV(CS11)
+        | _BV(CS10);
 
     OCR1B = 0;//156;//10*3125/100;
     OCR1A = 3125;
     sei();             // enable all interrupts
 }
 
+enum e_state {Update_Consigne,
+    Update_Screen,
+    Process_Commmand,
+    Send_Log};
+enum e_state state = Update_Consigne;
+
+int counts = 0;
+void encoder_init(void){
+    // DT   2
+    // CK   3
+    // PUSH 6
+
+    DDRD &= ~(1<<DDD2);
+    DDRD &= ~(1<<DDD3);
+    DDRD &= ~(1<<DDD6);
+
+    PORTD |= (1<<PORTD2);
+    PORTD |= (1<<PORTD3);
+    PORTD |= (1<<PORTD6);
+    counts = 0;
+
+    // Set Exti
+    // Trigger INT1 falling edge
+    EICRA |= (1<<ISC11);
+    // Enable INT1
+    EIMSK |= (1<<INT1);
+}
+
+// Return 1 if pressed
+uint8_t enc_switch_state(void){
+    return !(PIND&(1<<PIND6)); 
+}
+ISR (INT1_vect){
+    // A
+    if(state == Update_Consigne){
+        if(PIND&(1<<PIND2)){
+                counts ++;
+        }
+        else{
+                counts --;
+            
+        }
+    }
+}
+
+uint8_t line1[]   = "Starting up ...";
+//uint8_t line2[]   = "";
+void update_screen(void){
+    lcd_write_instruction_4d(lcd_Home);
+    _delay_us(80);                                  // 40 uS delay (min)
+    lcd_write_string_4d(line1);
+    //new_line(2);
+    //lcd_write_string_4d(line2);
+}
+
 int main(void)
 {
-//	char c = ' ';
 
-    uint8_t test[]   = "12222";
+
     uart_init();
-	
-	//sei();
-	
+
+    sei();
 
     stdout = &uart_output;
 
     //timer1_init();
     lcd_init_4d();
-    
-    lcd_write_string_4d(test);
+
+    lcd_write_string_4d(line1);
     printf("Debut\r\n");
-	for (;;) {
+    encoder_init();
+
+    for (;;) {
+
+        //printf("COUNT %i\t%i\r\n,",counts,enc_switch_state());
+        switch(state){
+            case Update_Consigne:
+                snprintf((char*)line1,16,"Temp %i           ",counts>>2);
+                if(enc_switch_state()){
+                    while(enc_switch_state());
+                    _delay_ms(500);
+                    while(!enc_switch_state()){
+                        update_screen();
+                        printf("Update Consigne\r\n");
+                        snprintf((char*)line1,16,"Temp %i           ",counts>>2);
+                        printf("[%s]\n",line1);
+                    }
+                    _delay_ms(500);
+                }
+                state = Update_Screen;
+                break;
+            case Update_Screen:
+                printf("Out\n");
+                state = Process_Commmand;
+                break;
+            case Process_Commmand:
+                state = Send_Log;
+                break;
+            case Send_Log:
+                state = Update_Consigne;
+                break;
+        }
     }	
     return 0; /* never reached */
 }
