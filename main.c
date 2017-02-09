@@ -244,15 +244,15 @@ int get_counts(void){
 
 
 uint8_t line1[]   = "Starting up ...";
-uint8_t line2[]   = "################ ";
-//uint8_t line2[]   = "";
+uint8_t line2[]   = "               ";
 void update_screen(void){
     lcd_write_instruction_4d(lcd_Home);
     _delay_us(80);                                  // 40 uS delay (min)
     lcd_write_string_4d(line1);
     new_line(2);
     lcd_write_string_4d(line2);
-//#new_line(1);
+    new_line(1);
+
 }
 
 uint16_t Consigne = DEFAULT_TEMP;
@@ -272,14 +272,13 @@ int main(void)
 
     stdout = &uart_output;
 
-    //timer1_init();
+    timer1_init();
     timer0_init();
     lcd_init_4d();
 
-    lcd_write_string_4d(line1);
+    //lcd_write_string_4d(line1);
     printf("Debut\r\n");
 
-    while(1);
 
 
     encoder_init();
@@ -287,8 +286,10 @@ int main(void)
 
     float tempp;
     Consigne = DEFAULT_TEMP;
+    uint8_t flag_no_iron = 0;
 
     for (;;) {
+        update_screen();
 
         switch(state){
             case Update_Consigne:
@@ -320,11 +321,14 @@ int main(void)
                 old_time = new_time;
                 // Update display content
                 tempp = get_temp();
+                snprintf((char*)line2,16," %i C             ",(int)tempp);
                 if(tempp< 0.0){
-                    //lcd.print("No Iron");
-                    snprintf((char*)line2,16,"No Iron           ");
+                    snprintf((char*)line2,16,"No Iron               ");
                     update_screen();
-
+                    flag_no_iron = 1;
+                }
+                else{
+                    flag_no_iron = 0;
                 }
                 last_display_update_ms = new_time;
 
@@ -343,7 +347,7 @@ int main(void)
                 KI = 0.005;
                 // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
                 command = KP*new_error + KD*derivative + KI*integral;
-                if(command >= 0.0){
+                if((command >= 0.0) && !flag_no_iron){
                     set_temp(command);
                 }
                 else{

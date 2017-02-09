@@ -1,0 +1,1079 @@
+   1               		.file	"lcd.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               	.global	lcd_write_4
+  11               	lcd_write_4:
+  12               	.LFB13:
+  13               		.file 1 "lcd.c"
+   1:lcd.c         **** /****************************************************************************
+   2:lcd.c         ****     LCD-AVR-4d.c  - Use an HD44780U based LCD with an Atmel ATmega processor
+   3:lcd.c         ****  
+   4:lcd.c         ****     Copyright (C) 2013 Donald Weiman    (weimandn@alfredstate.edu)
+   5:lcd.c         ****  
+   6:lcd.c         ****     This program is free software: you can redistribute it and/or modify
+   7:lcd.c         ****     it under the terms of the GNU General Public License as published by
+   8:lcd.c         ****     the Free Software Foundation, either version 3 of the License, or
+   9:lcd.c         ****     (at your option) any later version.
+  10:lcd.c         ****  
+  11:lcd.c         ****     This program is distributed in the hope that it will be useful,
+  12:lcd.c         ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:lcd.c         ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  14:lcd.c         ****     GNU General Public License for more details.
+  15:lcd.c         ****  
+  16:lcd.c         ****     You should have received a copy of the GNU General Public License
+  17:lcd.c         ****     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  18:lcd.c         ****  */
+  19:lcd.c         **** /****************************************************************************
+  20:lcd.c         ****          File:    LCD-AVR-4d.c
+  21:lcd.c         ****          Date:    September 16, 2013
+  22:lcd.c         ****  
+  23:lcd.c         ****        Target:    ATmega328
+  24:lcd.c         ****      Compiler:    avr-gcc (AVR Studio 6)
+  25:lcd.c         ****        Author:    Donald Weiman
+  26:lcd.c         ****  
+  27:lcd.c         ****       Summary:    4-bit data interface, busy flag not implemented.
+  28:lcd.c         ****                   Any LCD pin can be connected to any available I/O port.
+  29:lcd.c         ****                   Includes a simple write string routine.
+  30:lcd.c         ****  */
+  31:lcd.c         **** /******************************* Program Notes ******************************
+  32:lcd.c         ****  
+  33:lcd.c         ****             This program uses a 4-bit data interface but does not use the
+  34:lcd.c         ****               busy flag to determine when the LCD controller is ready.  The
+  35:lcd.c         ****               LCD RW line (pin 5) is not connected to the uP and it must be
+  36:lcd.c         ****               connected to GND for the program to function.
+  37:lcd.c         ****  
+  38:lcd.c         ****             All time delays are longer than those specified in most datasheets
+  39:lcd.c         ****               in order to accommodate slower than normal LCD modules.  This
+  40:lcd.c         ****               requirement is well documented but almost always ignored.  The
+  41:lcd.c         ****               information is in a note at the bottom of the right hand
+  42:lcd.c         ****               (Execution Time) column of the instruction set.
+  43:lcd.c         ****  
+  44:lcd.c         ****   ***************************************************************************
+  45:lcd.c         ****  
+  46:lcd.c         ****             The four data lines as well as the two control lines may be
+  47:lcd.c         ****               implemented on any available I/O pin of any port.  These are
+  48:lcd.c         ****               the connections used for this program:
+  49:lcd.c         ****  
+  50:lcd.c         ****                  -----------                   ----------
+  51:lcd.c         ****                 | ATmega328 |                 |   LCD    |
+  52:lcd.c         ****                 |           |                 |          |
+  53:lcd.c         ****                 |        PD7|---------------->|D7        |
+  54:lcd.c         ****                 |        PD6|---------------->|D6        |
+  55:lcd.c         ****                 |        PD5|---------------->|D5        |
+  56:lcd.c         ****                 |        PD4|---------------->|D4        |
+  57:lcd.c         ****                 |           |                 |D3        |
+  58:lcd.c         ****                 |           |                 |D2        |
+  59:lcd.c         ****                 |           |                 |D1        |
+  60:lcd.c         ****                 |           |                 |D0        |
+  61:lcd.c         ****                 |           |                 |          |
+  62:lcd.c         ****                 |        PB1|---------------->|E         |
+  63:lcd.c         ****                 |           |         GND --->|RW        |
+  64:lcd.c         ****                 |        PB0|---------------->|RS        |
+  65:lcd.c         ****                  -----------                   ----------
+  66:lcd.c         ****  
+  67:lcd.c         ****   **************************************************************************/
+  68:lcd.c         **** 
+  69:lcd.c         **** #define F_CPU 16000000UL
+  70:lcd.c         **** 
+  71:lcd.c         **** #include <avr/io.h>
+  72:lcd.c         **** #include <util/delay.h>
+  73:lcd.c         **** #include "lcd.h"
+  74:lcd.c         **** #include <stdio.h>
+  75:lcd.c         **** 
+  76:lcd.c         **** 
+  77:lcd.c         **** // Program ID
+  78:lcd.c         **** uint8_t program_author[]   = "Donald Weiman";
+  79:lcd.c         **** uint8_t program_version[]  = "LCD-AVR-4d (gcc)";
+  80:lcd.c         **** uint8_t program_date[]     = "Sep 16, 2013";
+  81:lcd.c         **** 
+  82:lcd.c         **** // Function Prototypes
+  83:lcd.c         **** void lcd_write_4(uint8_t);
+  84:lcd.c         **** void lcd_write_instruction_4d(uint8_t);
+  85:lcd.c         **** void lcd_write_character_4d(uint8_t);
+  86:lcd.c         **** void lcd_write_string_4d(uint8_t *);
+  87:lcd.c         **** void lcd_init_4d(void);
+  88:lcd.c         **** 
+  89:lcd.c         **** /******************************* Main Program Code *************************/
+  90:lcd.c         **** void new_line(uint8_t line){
+  91:lcd.c         ****     if(line == 2){
+  92:lcd.c         ****         lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+  93:lcd.c         ****     }
+  94:lcd.c         ****     else{
+  95:lcd.c         ****         lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+  96:lcd.c         ****     }
+  97:lcd.c         ****     _delay_us(80);                                  // 40 uS delay (min)
+  98:lcd.c         **** }
+  99:lcd.c         **** int hidden_main(void)
+ 100:lcd.c         **** {
+ 101:lcd.c         **** 
+ 102:lcd.c         **** // initialize the LCD controller as determined by the defines (LCD instructions)
+ 103:lcd.c         ****     lcd_init_4d();                                  // initialize the LCD display for a 4-bit inter
+ 104:lcd.c         **** 
+ 105:lcd.c         **** // display the first line of information
+ 106:lcd.c         ****     lcd_write_string_4d(program_author);
+ 107:lcd.c         **** 
+ 108:lcd.c         **** // set cursor to start of second line
+ 109:lcd.c         ****     lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+ 110:lcd.c         ****     _delay_us(80);                                  // 40 uS delay (min)
+ 111:lcd.c         **** 
+ 112:lcd.c         **** // display the second line of information
+ 113:lcd.c         ****     lcd_write_string_4d(program_version);
+ 114:lcd.c         **** 
+ 115:lcd.c         **** // endless loop
+ 116:lcd.c         ****     while(1);
+ 117:lcd.c         ****     return 0;
+ 118:lcd.c         **** }
+ 119:lcd.c         **** /******************************* End of Main Program Code ******************/
+ 120:lcd.c         **** 
+ 121:lcd.c         **** /*============================== 4-bit LCD Functions ======================*/
+ 122:lcd.c         **** /*
+ 123:lcd.c         ****   Name:     lcd_init_4d
+ 124:lcd.c         ****   Purpose:  initialize the LCD module for a 4-bit data interface
+ 125:lcd.c         ****   Entry:    equates (LCD instructions) set up for the desired operation
+ 126:lcd.c         ****   Exit:     no parameters
+ 127:lcd.c         ****   Notes:    uses time delays rather than checking the busy flag
+ 128:lcd.c         **** */
+ 129:lcd.c         **** void lcd_init_4d(void)
+ 130:lcd.c         **** {
+ 131:lcd.c         **** // configure the microprocessor pins for the data lines
+ 132:lcd.c         ****     lcd_D7_ddr |= (1<<lcd_D7_bit);                  // 4 data lines - output
+ 133:lcd.c         ****     lcd_D6_ddr |= (1<<lcd_D6_bit);
+ 134:lcd.c         ****     lcd_D5_ddr |= (1<<lcd_D5_bit);
+ 135:lcd.c         ****     lcd_D4_ddr |= (1<<lcd_D4_bit);
+ 136:lcd.c         **** 
+ 137:lcd.c         **** //// configure the microprocessor pins for the control lines
+ 138:lcd.c         ****     lcd_E_ddr |= (1<<lcd_E_bit);                    // E line - output
+ 139:lcd.c         ****     lcd_RS_ddr |= (1<<lcd_RS_bit);                  // RS line - output
+ 140:lcd.c         **** // Power-up delay
+ 141:lcd.c         ****     _delay_ms(100);                                 // initial 40 mSec delay
+ 142:lcd.c         **** 
+ 143:lcd.c         **** // IMPORTANT - At this point the LCD module is in the 8-bit mode and it is expecting to receive  
+ 144:lcd.c         **** //   8 bits of data, one bit on each of its 8 data lines, each time the 'E' line is pulsed.
+ 145:lcd.c         **** //
+ 146:lcd.c         **** // Since the LCD module is wired for the 4-bit mode, only the upper four data lines are connected t
+ 147:lcd.c         **** //   the microprocessor and the lower four data lines are typically left open.  Therefore, when 
+ 148:lcd.c         **** //   the 'E' line is pulsed, the LCD controller will read whatever data has been set up on the uppe
+ 149:lcd.c         **** //   four data lines and the lower four data lines will be high (due to internal pull-up circuitry)
+ 150:lcd.c         **** //
+ 151:lcd.c         **** // Fortunately the 'FunctionReset' instruction does not care about what is on the lower four bits s
+ 152:lcd.c         **** //   this instruction can be sent on just the four available data lines and it will be interpreted 
+ 153:lcd.c         **** //   properly by the LCD controller.  The 'lcd_write_4' subroutine will accomplish this if the 
+ 154:lcd.c         **** //   control lines have previously been configured properly.
+ 155:lcd.c         **** 
+ 156:lcd.c         **** // Set up the RS and E lines for the 'lcd_write_4' subroutine.
+ 157:lcd.c         ****     lcd_RS_port &= ~(1<<lcd_RS_bit);                // select the Instruction Register (RS low)
+ 158:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+ 159:lcd.c         **** 
+ 160:lcd.c         **** // Reset the LCD controller
+ 161:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // first part of reset sequence
+ 162:lcd.c         ****     _delay_ms(10);                                  // 4.1 mS delay (min)
+ 163:lcd.c         **** 
+ 164:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // second part of reset sequence
+ 165:lcd.c         ****     _delay_us(200);                                 // 100uS delay (min)
+ 166:lcd.c         **** 
+ 167:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // third part of reset sequence
+ 168:lcd.c         ****     _delay_us(200);                                 // this delay is omitted in the data sheet
+ 169:lcd.c         **** 
+ 170:lcd.c         **** // Preliminary Function Set instruction - used only to set the 4-bit mode.
+ 171:lcd.c         **** // The number of lines or the font cannot be set at this time since the controller is still in the
+ 172:lcd.c         **** //  8-bit mode, but the data transfer mode can be changed since this parameter is determined by one
+ 173:lcd.c         **** //  of the upper four bits of the instruction.
+ 174:lcd.c         ****  
+ 175:lcd.c         ****     lcd_write_4(lcd_FunctionSet4bit);               // set 4-bit mode
+ 176:lcd.c         ****     _delay_us(80);                                  // 40uS delay (min)
+ 177:lcd.c         **** 
+ 178:lcd.c         **** // Function Set instruction
+ 179:lcd.c         ****     lcd_write_instruction_4d(lcd_FunctionSet4bit);   // set mode, lines, and font
+ 180:lcd.c         ****     _delay_us(80);                                  // 40uS delay (min)
+ 181:lcd.c         **** 
+ 182:lcd.c         **** // The next three instructions are specified in the data sheet as part of the initialization routin
+ 183:lcd.c         **** //  so it is a good idea (but probably not necessary) to do them just as specified and then redo th
+ 184:lcd.c         **** //  later if the application requires a different configuration.
+ 185:lcd.c         **** 
+ 186:lcd.c         **** // Display On/Off Control instruction
+ 187:lcd.c         ****     lcd_write_instruction_4d(lcd_DisplayOff);        // turn display OFF
+ 188:lcd.c         ****     _delay_us(80);                                  // 40uS delay (min)
+ 189:lcd.c         **** 
+ 190:lcd.c         **** // Clear Display instruction
+ 191:lcd.c         ****     lcd_write_instruction_4d(lcd_Clear);             // clear display RAM
+ 192:lcd.c         ****     _delay_ms(4);                                   // 1.64 mS delay (min)
+ 193:lcd.c         **** 
+ 194:lcd.c         **** // ; Entry Mode Set instruction
+ 195:lcd.c         ****     lcd_write_instruction_4d(lcd_EntryMode);         // set desired shift characteristics
+ 196:lcd.c         ****     _delay_us(80);                                  // 40uS delay (min)
+ 197:lcd.c         **** 
+ 198:lcd.c         **** // This is the end of the LCD controller initialization as specified in the data sheet, but the dis
+ 199:lcd.c         **** //  has been left in the OFF condition.  This is a good time to turn the display back ON.
+ 200:lcd.c         ****  
+ 201:lcd.c         **** // Display On/Off Control instruction
+ 202:lcd.c         ****     lcd_write_instruction_4d(lcd_DisplayOn);         // turn the display ON
+ 203:lcd.c         ****     _delay_us(80);                                  // 40uS delay (min)
+ 204:lcd.c         **** }
+ 205:lcd.c         **** 
+ 206:lcd.c         **** /*...........................................................................
+ 207:lcd.c         ****   Name:     lcd_write_string_4d
+ 208:lcd.c         **** ; Purpose:  display a string of characters on the LCD
+ 209:lcd.c         ****   Entry:    (theString) is the string to be displayed
+ 210:lcd.c         ****   Exit:     no parameters
+ 211:lcd.c         ****   Notes:    uses time delays rather than checking the busy flag
+ 212:lcd.c         **** */
+ 213:lcd.c         **** void lcd_write_string_4d(uint8_t theString[])
+ 214:lcd.c         **** {
+ 215:lcd.c         ****     volatile int i = 0;                             // character counter*/
+ 216:lcd.c         ****     while (theString[i] != 0)
+ 217:lcd.c         ****     {
+ 218:lcd.c         ****         lcd_write_character_4d(theString[i]);
+ 219:lcd.c         ****         i++;
+ 220:lcd.c         ****         _delay_us(80);                              // 40 uS delay (min)
+ 221:lcd.c         ****     }
+ 222:lcd.c         **** }
+ 223:lcd.c         **** 
+ 224:lcd.c         **** /*...........................................................................
+ 225:lcd.c         ****   Name:     lcd_write_character_4d
+ 226:lcd.c         ****   Purpose:  send a byte of information to the LCD data register
+ 227:lcd.c         ****   Entry:    (theData) is the information to be sent to the data register
+ 228:lcd.c         ****   Exit:     no parameters
+ 229:lcd.c         ****   Notes:    does not deal with RW (busy flag is not implemented)
+ 230:lcd.c         **** */
+ 231:lcd.c         **** 
+ 232:lcd.c         **** void lcd_write_character_4d(uint8_t theData)
+ 233:lcd.c         **** {
+ 234:lcd.c         ****     lcd_RS_port |= (1<<lcd_RS_bit);                 // select the Data Register (RS high)
+ 235:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+ 236:lcd.c         ****     lcd_write_4(theData);                           // write the upper 4-bits of the data
+ 237:lcd.c         ****     lcd_write_4(theData << 4);                      // write the lower 4-bits of the data
+ 238:lcd.c         **** }
+ 239:lcd.c         **** 
+ 240:lcd.c         **** /*...........................................................................
+ 241:lcd.c         ****   Name:     lcd_write_instruction_4d
+ 242:lcd.c         ****   Purpose:  send a byte of information to the LCD instruction register
+ 243:lcd.c         ****   Entry:    (theInstruction) is the information to be sent to the instruction register
+ 244:lcd.c         ****   Exit:     no parameters
+ 245:lcd.c         ****   Notes:    does not deal with RW (busy flag is not implemented)
+ 246:lcd.c         **** */
+ 247:lcd.c         **** void lcd_write_instruction_4d(uint8_t theInstruction)
+ 248:lcd.c         **** {
+ 249:lcd.c         ****     lcd_RS_port &= ~(1<<lcd_RS_bit);                // select the Instruction Register (RS low)
+ 250:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+ 251:lcd.c         ****     lcd_write_4(theInstruction);                    // write the upper 4-bits of the data
+ 252:lcd.c         ****     lcd_write_4(theInstruction << 4);               // write the lower 4-bits of the data
+ 253:lcd.c         **** }
+ 254:lcd.c         **** 
+ 255:lcd.c         **** 
+ 256:lcd.c         **** /*...........................................................................
+ 257:lcd.c         ****   Name:     lcd_write_4
+ 258:lcd.c         ****   Purpose:  send a byte of information to the LCD module
+ 259:lcd.c         ****   Entry:    (theByte) is the information to be sent to the desired LCD register
+ 260:lcd.c         ****             RS is configured for the desired LCD register
+ 261:lcd.c         ****             E is low
+ 262:lcd.c         ****             RW is low
+ 263:lcd.c         ****   Exit:     no parameters
+ 264:lcd.c         ****   Notes:    use either time delays or the busy flag
+ 265:lcd.c         **** */
+ 266:lcd.c         **** void lcd_write_4(uint8_t theByte)
+ 267:lcd.c         **** {
+  14               		.loc 1 267 0
+  15               	.LVL0:
+  16               	/* prologue: function */
+  17               	/* frame size = 0 */
+  18               	/* stack size = 0 */
+  19               	.L__stack_usage = 0
+ 268:lcd.c         ****     lcd_D7_port &= ~(1<<lcd_D7_bit);                        // assume that data is '0'
+  20               		.loc 1 268 0
+  21 0000 5D98      		cbi 0xb,5
+ 269:lcd.c         ****     if (theByte & 1<<7) lcd_D7_port |= (1<<lcd_D7_bit);     // make data = '1' if necessary
+  22               		.loc 1 269 0
+  23 0002 87FD      		sbrc r24,7
+  24               		.loc 1 269 0 is_stmt 0 discriminator 1
+  25 0004 5D9A      		sbi 0xb,5
+  26               	.L2:
+ 270:lcd.c         **** 
+ 271:lcd.c         ****     lcd_D6_port &= ~(1<<lcd_D6_bit);                        // repeat for each data bit
+  27               		.loc 1 271 0 is_stmt 1
+  28 0006 5C98      		cbi 0xb,4
+ 272:lcd.c         ****     if (theByte & 1<<6) lcd_D6_port |= (1<<lcd_D6_bit);
+  29               		.loc 1 272 0
+  30 0008 86FD      		sbrc r24,6
+  31               		.loc 1 272 0 is_stmt 0 discriminator 1
+  32 000a 5C9A      		sbi 0xb,4
+  33               	.L3:
+ 273:lcd.c         **** 
+ 274:lcd.c         ****     lcd_D5_port &= ~(1<<lcd_D5_bit);
+  34               		.loc 1 274 0 is_stmt 1
+  35 000c 2898      		cbi 0x5,0
+ 275:lcd.c         ****     if (theByte & 1<<5) lcd_D5_port |= (1<<lcd_D5_bit);
+  36               		.loc 1 275 0
+  37 000e 85FD      		sbrc r24,5
+  38               		.loc 1 275 0 is_stmt 0 discriminator 1
+  39 0010 289A      		sbi 0x5,0
+  40               	.L4:
+ 276:lcd.c         **** 
+ 277:lcd.c         ****     lcd_D4_port &= ~(1<<lcd_D4_bit);
+  41               		.loc 1 277 0 is_stmt 1
+  42 0012 5F98      		cbi 0xb,7
+ 278:lcd.c         ****     if (theByte & 1<<4) lcd_D4_port |= (1<<lcd_D4_bit);
+  43               		.loc 1 278 0
+  44 0014 84FD      		sbrc r24,4
+  45               		.loc 1 278 0 is_stmt 0 discriminator 1
+  46 0016 5F9A      		sbi 0xb,7
+  47               	.L5:
+ 279:lcd.c         **** 
+ 280:lcd.c         **** // write the data
+ 281:lcd.c         ****                                                     // 'Address set-up time' (40 nS)
+ 282:lcd.c         ****     lcd_E_port |= (1<<lcd_E_bit);                   // Enable pin high
+  48               		.loc 1 282 0 is_stmt 1
+  49 0018 2B9A      		sbi 0x5,3
+  50               	.LVL1:
+  51               	.LBB32:
+  52               	.LBB33:
+  53               		.file 2 "/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h"
+   1:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+   6:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+   9:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  12:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      distribution.
+  16:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  17:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  21:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  33:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /* $Id: delay.h.in 2251 2011-09-14 08:20:33Z joerg_wunsch $ */
+  34:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  35:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  38:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #ifndef __HAS_DELAY_CYCLES
+  39:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #define __HAS_DELAY_CYCLES 1
+  40:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+  41:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  42:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #include <inttypes.h>
+  43:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #include <util/delay_basic.h>
+  44:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #include <math.h>
+  45:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  46:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /** \file */
+  47:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  48:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     \code
+  49:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  50:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  51:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     #include <util/delay.h>
+  52:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     \endcode
+  53:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  54:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  55:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  56:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  57:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     used.
+  58:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  59:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  60:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  61:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  62:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  63:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  64:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  65:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  66:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  67:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  68:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  69:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  70:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  71:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  72:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  73:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  74:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  75:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     routines linked into the application.
+  76:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  77:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  78:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  79:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  80:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  81:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** */
+  82:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  83:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  84:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** static inline void _delay_us(double __us) __attribute__((always_inline));
+  85:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** static inline void _delay_ms(double __ms) __attribute__((always_inline));
+  86:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+  87:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  88:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #ifndef F_CPU
+  89:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  90:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  91:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** # define F_CPU 1000000UL
+  92:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+  93:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  94:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+  95:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+  96:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+  97:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+  98:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+  99:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 100:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   __STDC_HOSTED__
+ 101:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #  include <math.h>
+ 102:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+ 103:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 104:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /**
+ 105:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    \ingroup util_delay
+ 106:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 107:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 108:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 109:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 110:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 111:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 112:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 113:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 114:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 115:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 116:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 117:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 118:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 119:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 120:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 121:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 122:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 123:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 124:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 125:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 126:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 127:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 128:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 129:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 130:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    to round down and round to closest integer.
+ 131:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 132:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Note: The new implementation of _delay_ms(double __ms) with 
+ 133:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible. 
+ 134:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 135:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Also, the backward compatible
+ 136:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 137:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 138:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    required for rounding are not available to the compiler then.
+ 139:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 140:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****  */
+ 141:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** void
+ 142:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** _delay_ms(double __ms)
+ 143:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** {
+ 144:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	uint16_t __ticks;
+ 145:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	double __tmp ; 
+ 146:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 147:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 148:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   __STDC_HOSTED__
+ 149:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 150:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 151:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 152:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 153:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 154:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 155:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 156:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 157:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 158:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 159:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#else
+ 160:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		//round up by default
+ 161:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 162:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#endif
+ 163:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 164:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 165:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 166:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #else
+ 167:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 4e3) * __ms;
+ 168:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	if (__tmp < 1.0)
+ 169:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks = 1;
+ 170:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	else if (__tmp > 65535)
+ 171:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	{
+ 172:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		//	__ticks = requested delay in 1/10 ms
+ 173:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks = (uint16_t) (__ms * 10.0);
+ 174:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		while(__ticks)
+ 175:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		{
+ 176:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 			// wait 1/10 ms
+ 177:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 			_delay_loop_2(((F_CPU) / 4e3) / 10);
+ 178:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 			__ticks --;
+ 179:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		}
+ 180:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		return;
+ 181:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	}
+ 182:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	else
+ 183:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks = (uint16_t)__tmp;
+ 184:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	_delay_loop_2(__ticks);
+ 185:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #endif
+ 186:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** }
+ 187:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 188:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** /**
+ 189:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    \ingroup util_delay
+ 190:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 191:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Perform a delay of \c __us microseconds, using _delay_loop_1().
+ 192:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 193:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 194:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 195:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 196:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    The maximal possible delay is 768 us / F_CPU in MHz.
+ 197:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 198:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    If the user requests a delay greater than the maximal possible one,
+ 199:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    _delay_us() will automatically call _delay_ms() instead.  The user
+ 200:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    will not be informed about this case.
+ 201:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 202:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 203:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 us/ F_CPU in MHz. For
+ 204:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    values greater than the maximal possible delay, overflow results in
+ 205:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    no delay i.e., 0us.
+ 206:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   
+ 207:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 208:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 209:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 210:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 211:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 212:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    to round down and round to closest integer.
+ 213:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****  
+ 214:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Note: The new implementation of _delay_us(double __us) with 
+ 215:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible.
+ 216:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 217:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    Also, the backward compatible
+ 218:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 219:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 220:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****    required for rounding are not available to the compiler then.
+ 221:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 222:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****  */
+ 223:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** void
+ 224:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** _delay_us(double __us)
+ 225:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** {
+ 226:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	uint8_t __ticks;
+ 227:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	double __tmp ; 
+ 228:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 229:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 230:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h ****   __STDC_HOSTED__
+ 231:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 232:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 233:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e6) * __us;
+ 234:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 235:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 236:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 237:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 238:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 239:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 240:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 241:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#else
+ 242:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		//round up by default
+ 243:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 244:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	#endif
+ 245:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 
+ 246:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+  54               		.loc 2 246 0
+  55 001a 85E0      		ldi r24,lo8(5)
+  56 001c 8A95      		1: dec r24
+  57 001e 01F4      		brne 1b
+  58               	.LVL2:
+  59 0020 0000      		nop
+  60               	.LBE33:
+  61               	.LBE32:
+ 283:lcd.c         ****     _delay_us(1);                                   // implement 'Data set-up time' (80 nS) and 'En
+ 284:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // Enable pin low
+  62               		.loc 1 284 0
+  63 0022 2B98      		cbi 0x5,3
+  64               	.LVL3:
+  65               	.LBB34:
+  66               	.LBB35:
+  67               		.loc 2 246 0
+  68 0024 85E0      		ldi r24,lo8(5)
+  69 0026 8A95      		1: dec r24
+  70 0028 01F4      		brne 1b
+  71 002a 0000      		nop
+  72 002c 0895      		ret
+  73               	.LBE35:
+  74               	.LBE34:
+  75               	.LFE13:
+  77               	.global	lcd_write_instruction_4d
+  79               	lcd_write_instruction_4d:
+  80               	.LFB12:
+ 248:lcd.c         **** {
+  81               		.loc 1 248 0
+  82               	.LVL4:
+  83 002e CF93      		push r28
+  84               	.LCFI0:
+  85               	/* prologue: function */
+  86               	/* frame size = 0 */
+  87               	/* stack size = 1 */
+  88               	.L__stack_usage = 1
+  89 0030 C82F      		mov r28,r24
+ 249:lcd.c         ****     lcd_RS_port &= ~(1<<lcd_RS_bit);                // select the Instruction Register (RS low)
+  90               		.loc 1 249 0
+  91 0032 2C98      		cbi 0x5,4
+ 250:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+  92               		.loc 1 250 0
+  93 0034 2B98      		cbi 0x5,3
+ 251:lcd.c         ****     lcd_write_4(theInstruction);                    // write the upper 4-bits of the data
+  94               		.loc 1 251 0
+  95 0036 0E94 0000 		call lcd_write_4
+  96               	.LVL5:
+ 252:lcd.c         ****     lcd_write_4(theInstruction << 4);               // write the lower 4-bits of the data
+  97               		.loc 1 252 0
+  98 003a 8C2F      		mov r24,r28
+  99 003c 8295      		swap r24
+ 100 003e 807F      		andi r24,lo8(-16)
+ 101               	/* epilogue start */
+ 253:lcd.c         **** }
+ 102               		.loc 1 253 0
+ 103 0040 CF91      		pop r28
+ 104               	.LVL6:
+ 252:lcd.c         ****     lcd_write_4(theInstruction << 4);               // write the lower 4-bits of the data
+ 105               		.loc 1 252 0
+ 106 0042 0C94 0000 		jmp lcd_write_4
+ 107               	.LVL7:
+ 108               	.LFE12:
+ 110               	.global	new_line
+ 112               	new_line:
+ 113               	.LFB7:
+  90:lcd.c         **** void new_line(uint8_t line){
+ 114               		.loc 1 90 0
+ 115               	.LVL8:
+ 116               	/* prologue: function */
+ 117               	/* frame size = 0 */
+ 118               	/* stack size = 0 */
+ 119               	.L__stack_usage = 0
+  92:lcd.c         ****         lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+ 120               		.loc 1 92 0
+ 121 0046 80EC      		ldi r24,lo8(-64)
+ 122               	.LVL9:
+ 123 0048 0E94 0000 		call lcd_write_instruction_4d
+ 124               	.LVL10:
+ 125               	.LBB36:
+ 126               	.LBB37:
+ 127               		.loc 2 246 0
+ 128 004c 8FE3      		ldi r24,lo8(319)
+ 129 004e 91E0      		ldi r25,hi8(319)
+ 130 0050 0197      		1: sbiw r24,1
+ 131 0052 01F4      		brne 1b
+ 132 0054 00C0      		rjmp .
+ 133 0056 0000      		nop
+ 134 0058 0895      		ret
+ 135               	.LBE37:
+ 136               	.LBE36:
+ 137               	.LFE7:
+ 139               	.global	lcd_write_character_4d
+ 141               	lcd_write_character_4d:
+ 142               	.LFB11:
+ 233:lcd.c         **** {
+ 143               		.loc 1 233 0
+ 144               	.LVL11:
+ 145 005a CF93      		push r28
+ 146               	.LCFI1:
+ 147               	/* prologue: function */
+ 148               	/* frame size = 0 */
+ 149               	/* stack size = 1 */
+ 150               	.L__stack_usage = 1
+ 151 005c C82F      		mov r28,r24
+ 234:lcd.c         ****     lcd_RS_port |= (1<<lcd_RS_bit);                 // select the Data Register (RS high)
+ 152               		.loc 1 234 0
+ 153 005e 2C9A      		sbi 0x5,4
+ 235:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+ 154               		.loc 1 235 0
+ 155 0060 2B98      		cbi 0x5,3
+ 236:lcd.c         ****     lcd_write_4(theData);                           // write the upper 4-bits of the data
+ 156               		.loc 1 236 0
+ 157 0062 0E94 0000 		call lcd_write_4
+ 158               	.LVL12:
+ 237:lcd.c         ****     lcd_write_4(theData << 4);                      // write the lower 4-bits of the data
+ 159               		.loc 1 237 0
+ 160 0066 8C2F      		mov r24,r28
+ 161 0068 8295      		swap r24
+ 162 006a 807F      		andi r24,lo8(-16)
+ 163               	/* epilogue start */
+ 238:lcd.c         **** }
+ 164               		.loc 1 238 0
+ 165 006c CF91      		pop r28
+ 166               	.LVL13:
+ 237:lcd.c         ****     lcd_write_4(theData << 4);                      // write the lower 4-bits of the data
+ 167               		.loc 1 237 0
+ 168 006e 0C94 0000 		jmp lcd_write_4
+ 169               	.LVL14:
+ 170               	.LFE11:
+ 172               	.global	lcd_write_string_4d
+ 174               	lcd_write_string_4d:
+ 175               	.LFB10:
+ 214:lcd.c         **** {
+ 176               		.loc 1 214 0
+ 177               	.LVL15:
+ 178 0072 0F93      		push r16
+ 179               	.LCFI2:
+ 180 0074 1F93      		push r17
+ 181               	.LCFI3:
+ 182 0076 CF93      		push r28
+ 183               	.LCFI4:
+ 184 0078 DF93      		push r29
+ 185               	.LCFI5:
+ 186 007a 00D0      		rcall .
+ 187               	.LCFI6:
+ 188 007c CDB7      		in r28,__SP_L__
+ 189 007e DEB7      		in r29,__SP_H__
+ 190               	.LCFI7:
+ 191               	/* prologue: function */
+ 192               	/* frame size = 2 */
+ 193               	/* stack size = 6 */
+ 194               	.L__stack_usage = 6
+ 195 0080 8C01      		movw r16,r24
+ 215:lcd.c         ****     volatile int i = 0;                             // character counter*/
+ 196               		.loc 1 215 0
+ 197 0082 1A82      		std Y+2,__zero_reg__
+ 198 0084 1982      		std Y+1,__zero_reg__
+ 199               	.LVL16:
+ 216:lcd.c         ****     while (theString[i] != 0)
+ 200               		.loc 1 216 0
+ 201 0086 00C0      		rjmp .L19
+ 202               	.LVL17:
+ 203               	.L20:
+ 218:lcd.c         ****         lcd_write_character_4d(theString[i]);
+ 204               		.loc 1 218 0
+ 205 0088 E981      		ldd r30,Y+1
+ 206 008a FA81      		ldd r31,Y+2
+ 207 008c E00F      		add r30,r16
+ 208 008e F11F      		adc r31,r17
+ 209 0090 8081      		ld r24,Z
+ 210 0092 0E94 0000 		call lcd_write_character_4d
+ 211               	.LVL18:
+ 219:lcd.c         ****         i++;
+ 212               		.loc 1 219 0
+ 213 0096 2981      		ldd r18,Y+1
+ 214 0098 3A81      		ldd r19,Y+2
+ 215 009a 2F5F      		subi r18,-1
+ 216 009c 3F4F      		sbci r19,-1
+ 217               	.LVL19:
+ 218 009e 3A83      		std Y+2,r19
+ 219 00a0 2983      		std Y+1,r18
+ 220               	.LVL20:
+ 221               	.LBB38:
+ 222               	.LBB39:
+ 223               		.loc 2 246 0
+ 224 00a2 8FE3      		ldi r24,lo8(319)
+ 225 00a4 91E0      		ldi r25,hi8(319)
+ 226 00a6 0197      		1: sbiw r24,1
+ 227 00a8 01F4      		brne 1b
+ 228 00aa 00C0      		rjmp .
+ 229 00ac 0000      		nop
+ 230               	.LVL21:
+ 231               	.L19:
+ 232               	.LBE39:
+ 233               	.LBE38:
+ 216:lcd.c         ****     while (theString[i] != 0)
+ 234               		.loc 1 216 0 discriminator 1
+ 235 00ae E981      		ldd r30,Y+1
+ 236 00b0 FA81      		ldd r31,Y+2
+ 237 00b2 E00F      		add r30,r16
+ 238 00b4 F11F      		adc r31,r17
+ 239 00b6 8081      		ld r24,Z
+ 240 00b8 8111      		cpse r24,__zero_reg__
+ 241 00ba 00C0      		rjmp .L20
+ 242               	/* epilogue start */
+ 222:lcd.c         **** }
+ 243               		.loc 1 222 0
+ 244 00bc 0F90      		pop __tmp_reg__
+ 245 00be 0F90      		pop __tmp_reg__
+ 246 00c0 DF91      		pop r29
+ 247 00c2 CF91      		pop r28
+ 248 00c4 1F91      		pop r17
+ 249 00c6 0F91      		pop r16
+ 250               	.LVL22:
+ 251 00c8 0895      		ret
+ 252               	.LFE10:
+ 254               	.global	lcd_init_4d
+ 256               	lcd_init_4d:
+ 257               	.LFB9:
+ 130:lcd.c         **** {
+ 258               		.loc 1 130 0
+ 259               	/* prologue: function */
+ 260               	/* frame size = 0 */
+ 261               	/* stack size = 0 */
+ 262               	.L__stack_usage = 0
+ 132:lcd.c         ****     lcd_D7_ddr |= (1<<lcd_D7_bit);                  // 4 data lines - output
+ 263               		.loc 1 132 0
+ 264 00ca 559A      		sbi 0xa,5
+ 133:lcd.c         ****     lcd_D6_ddr |= (1<<lcd_D6_bit);
+ 265               		.loc 1 133 0
+ 266 00cc 549A      		sbi 0xa,4
+ 134:lcd.c         ****     lcd_D5_ddr |= (1<<lcd_D5_bit);
+ 267               		.loc 1 134 0
+ 268 00ce 209A      		sbi 0x4,0
+ 135:lcd.c         ****     lcd_D4_ddr |= (1<<lcd_D4_bit);
+ 269               		.loc 1 135 0
+ 270 00d0 579A      		sbi 0xa,7
+ 138:lcd.c         ****     lcd_E_ddr |= (1<<lcd_E_bit);                    // E line - output
+ 271               		.loc 1 138 0
+ 272 00d2 239A      		sbi 0x4,3
+ 139:lcd.c         ****     lcd_RS_ddr |= (1<<lcd_RS_bit);                  // RS line - output
+ 273               		.loc 1 139 0
+ 274 00d4 249A      		sbi 0x4,4
+ 275               	.LVL23:
+ 276               	.LBB40:
+ 277               	.LBB41:
+ 164:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 278               		.loc 2 164 0
+ 279 00d6 2FEF      		ldi r18,lo8(319999)
+ 280 00d8 81EE      		ldi r24,hi8(319999)
+ 281 00da 94E0      		ldi r25,hlo8(319999)
+ 282 00dc 2150      		1: subi r18,1
+ 283 00de 8040      		sbci r24,0
+ 284 00e0 9040      		sbci r25,0
+ 285 00e2 01F4      		brne 1b
+ 286 00e4 00C0      		rjmp .
+ 287 00e6 0000      		nop
+ 288               	.LBE41:
+ 289               	.LBE40:
+ 157:lcd.c         ****     lcd_RS_port &= ~(1<<lcd_RS_bit);                // select the Instruction Register (RS low)
+ 290               		.loc 1 157 0
+ 291 00e8 2C98      		cbi 0x5,4
+ 158:lcd.c         ****     lcd_E_port &= ~(1<<lcd_E_bit);                  // make sure E is initially low
+ 292               		.loc 1 158 0
+ 293 00ea 2B98      		cbi 0x5,3
+ 161:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // first part of reset sequence
+ 294               		.loc 1 161 0
+ 295 00ec 80E3      		ldi r24,lo8(48)
+ 296 00ee 0E94 0000 		call lcd_write_4
+ 297               	.LVL24:
+ 298               	.LBB42:
+ 299               	.LBB43:
+ 164:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 300               		.loc 2 164 0
+ 301 00f2 8FE3      		ldi r24,lo8(-25537)
+ 302 00f4 9CE9      		ldi r25,hi8(-25537)
+ 303 00f6 0197      		1: sbiw r24,1
+ 304 00f8 01F4      		brne 1b
+ 305 00fa 00C0      		rjmp .
+ 306 00fc 0000      		nop
+ 307               	.LBE43:
+ 308               	.LBE42:
+ 164:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // second part of reset sequence
+ 309               		.loc 1 164 0
+ 310 00fe 80E3      		ldi r24,lo8(48)
+ 311 0100 0E94 0000 		call lcd_write_4
+ 312               	.LVL25:
+ 313               	.LBB44:
+ 314               	.LBB45:
+ 315               		.loc 2 246 0
+ 316 0104 8FE1      		ldi r24,lo8(799)
+ 317 0106 93E0      		ldi r25,hi8(799)
+ 318 0108 0197      		1: sbiw r24,1
+ 319 010a 01F4      		brne 1b
+ 320 010c 00C0      		rjmp .
+ 321 010e 0000      		nop
+ 322               	.LBE45:
+ 323               	.LBE44:
+ 167:lcd.c         ****     lcd_write_4(lcd_FunctionReset);                 // third part of reset sequence
+ 324               		.loc 1 167 0
+ 325 0110 80E3      		ldi r24,lo8(48)
+ 326 0112 0E94 0000 		call lcd_write_4
+ 327               	.LVL26:
+ 328               	.LBB46:
+ 329               	.LBB47:
+ 330               		.loc 2 246 0
+ 331 0116 8FE1      		ldi r24,lo8(799)
+ 332 0118 93E0      		ldi r25,hi8(799)
+ 333 011a 0197      		1: sbiw r24,1
+ 334 011c 01F4      		brne 1b
+ 335 011e 00C0      		rjmp .
+ 336 0120 0000      		nop
+ 337               	.LBE47:
+ 338               	.LBE46:
+ 175:lcd.c         ****     lcd_write_4(lcd_FunctionSet4bit);               // set 4-bit mode
+ 339               		.loc 1 175 0
+ 340 0122 88E2      		ldi r24,lo8(40)
+ 341 0124 0E94 0000 		call lcd_write_4
+ 342               	.LVL27:
+ 343               	.LBB48:
+ 344               	.LBB49:
+ 345               		.loc 2 246 0
+ 346 0128 8FE3      		ldi r24,lo8(319)
+ 347 012a 91E0      		ldi r25,hi8(319)
+ 348 012c 0197      		1: sbiw r24,1
+ 349 012e 01F4      		brne 1b
+ 350 0130 00C0      		rjmp .
+ 351 0132 0000      		nop
+ 352               	.LBE49:
+ 353               	.LBE48:
+ 179:lcd.c         ****     lcd_write_instruction_4d(lcd_FunctionSet4bit);   // set mode, lines, and font
+ 354               		.loc 1 179 0
+ 355 0134 88E2      		ldi r24,lo8(40)
+ 356 0136 0E94 0000 		call lcd_write_instruction_4d
+ 357               	.LVL28:
+ 358               	.LBB50:
+ 359               	.LBB51:
+ 360               		.loc 2 246 0
+ 361 013a 8FE3      		ldi r24,lo8(319)
+ 362 013c 91E0      		ldi r25,hi8(319)
+ 363 013e 0197      		1: sbiw r24,1
+ 364 0140 01F4      		brne 1b
+ 365 0142 00C0      		rjmp .
+ 366 0144 0000      		nop
+ 367               	.LBE51:
+ 368               	.LBE50:
+ 187:lcd.c         ****     lcd_write_instruction_4d(lcd_DisplayOff);        // turn display OFF
+ 369               		.loc 1 187 0
+ 370 0146 88E0      		ldi r24,lo8(8)
+ 371 0148 0E94 0000 		call lcd_write_instruction_4d
+ 372               	.LVL29:
+ 373               	.LBB52:
+ 374               	.LBB53:
+ 375               		.loc 2 246 0
+ 376 014c 8FE3      		ldi r24,lo8(319)
+ 377 014e 91E0      		ldi r25,hi8(319)
+ 378 0150 0197      		1: sbiw r24,1
+ 379 0152 01F4      		brne 1b
+ 380 0154 00C0      		rjmp .
+ 381 0156 0000      		nop
+ 382               	.LBE53:
+ 383               	.LBE52:
+ 191:lcd.c         ****     lcd_write_instruction_4d(lcd_Clear);             // clear display RAM
+ 384               		.loc 1 191 0
+ 385 0158 81E0      		ldi r24,lo8(1)
+ 386 015a 0E94 0000 		call lcd_write_instruction_4d
+ 387               	.LVL30:
+ 388               	.LBB54:
+ 389               	.LBB55:
+ 164:/usr/lib/gcc/avr/4.7.2/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 390               		.loc 2 164 0
+ 391 015e 8FE7      		ldi r24,lo8(15999)
+ 392 0160 9EE3      		ldi r25,hi8(15999)
+ 393 0162 0197      		1: sbiw r24,1
+ 394 0164 01F4      		brne 1b
+ 395 0166 00C0      		rjmp .
+ 396 0168 0000      		nop
+ 397               	.LBE55:
+ 398               	.LBE54:
+ 195:lcd.c         ****     lcd_write_instruction_4d(lcd_EntryMode);         // set desired shift characteristics
+ 399               		.loc 1 195 0
+ 400 016a 86E0      		ldi r24,lo8(6)
+ 401 016c 0E94 0000 		call lcd_write_instruction_4d
+ 402               	.LVL31:
+ 403               	.LBB56:
+ 404               	.LBB57:
+ 405               		.loc 2 246 0
+ 406 0170 8FE3      		ldi r24,lo8(319)
+ 407 0172 91E0      		ldi r25,hi8(319)
+ 408 0174 0197      		1: sbiw r24,1
+ 409 0176 01F4      		brne 1b
+ 410 0178 00C0      		rjmp .
+ 411 017a 0000      		nop
+ 412               	.LBE57:
+ 413               	.LBE56:
+ 202:lcd.c         ****     lcd_write_instruction_4d(lcd_DisplayOn);         // turn the display ON
+ 414               		.loc 1 202 0
+ 415 017c 8CE0      		ldi r24,lo8(12)
+ 416 017e 0E94 0000 		call lcd_write_instruction_4d
+ 417               	.LVL32:
+ 418               	.LBB58:
+ 419               	.LBB59:
+ 420               		.loc 2 246 0
+ 421 0182 8FE3      		ldi r24,lo8(319)
+ 422 0184 91E0      		ldi r25,hi8(319)
+ 423 0186 0197      		1: sbiw r24,1
+ 424 0188 01F4      		brne 1b
+ 425 018a 00C0      		rjmp .
+ 426 018c 0000      		nop
+ 427 018e 0895      		ret
+ 428               	.LBE59:
+ 429               	.LBE58:
+ 430               	.LFE9:
+ 432               	.global	hidden_main
+ 434               	hidden_main:
+ 435               	.LFB8:
+ 100:lcd.c         **** {
+ 436               		.loc 1 100 0
+ 437               	/* prologue: function */
+ 438               	/* frame size = 0 */
+ 439               	/* stack size = 0 */
+ 440               	.L__stack_usage = 0
+ 103:lcd.c         ****     lcd_init_4d();                                  // initialize the LCD display for a 4-bit inter
+ 441               		.loc 1 103 0
+ 442 0190 0E94 0000 		call lcd_init_4d
+ 443               	.LVL33:
+ 106:lcd.c         ****     lcd_write_string_4d(program_author);
+ 444               		.loc 1 106 0
+ 445 0194 80E0      		ldi r24,lo8(program_author)
+ 446 0196 90E0      		ldi r25,hi8(program_author)
+ 447 0198 0E94 0000 		call lcd_write_string_4d
+ 448               	.LVL34:
+ 109:lcd.c         ****     lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+ 449               		.loc 1 109 0
+ 450 019c 80EC      		ldi r24,lo8(-64)
+ 451 019e 0E94 0000 		call lcd_write_instruction_4d
+ 452               	.LVL35:
+ 453               	.LBB60:
+ 454               	.LBB61:
+ 455               		.loc 2 246 0
+ 456 01a2 8FE3      		ldi r24,lo8(319)
+ 457 01a4 91E0      		ldi r25,hi8(319)
+ 458 01a6 0197      		1: sbiw r24,1
+ 459 01a8 01F4      		brne 1b
+ 460 01aa 00C0      		rjmp .
+ 461 01ac 0000      		nop
+ 462               	.LBE61:
+ 463               	.LBE60:
+ 113:lcd.c         ****     lcd_write_string_4d(program_version);
+ 464               		.loc 1 113 0
+ 465 01ae 80E0      		ldi r24,lo8(program_version)
+ 466 01b0 90E0      		ldi r25,hi8(program_version)
+ 467 01b2 0E94 0000 		call lcd_write_string_4d
+ 468               	.LVL36:
+ 469               	.L23:
+ 470 01b6 00C0      		rjmp .L23
+ 471               	.LFE8:
+ 473               	.global	program_date
+ 474               		.data
+ 477               	program_date:
+ 478 0000 5365 7020 		.string	"Sep 16, 2013"
+ 478      3136 2C20 
+ 478      3230 3133 
+ 478      00
+ 479               	.global	program_version
+ 482               	program_version:
+ 483 000d 4C43 442D 		.string	"LCD-AVR-4d (gcc)"
+ 483      4156 522D 
+ 483      3464 2028 
+ 483      6763 6329 
+ 483      00
+ 484               	.global	program_author
+ 487               	program_author:
+ 488 001e 446F 6E61 		.string	"Donald Weiman"
+ 488      6C64 2057 
+ 488      6569 6D61 
+ 488      6E00 
+ 607               	.Letext0:
+ 608               		.file 3 "/usr/lib/gcc/avr/4.7.2/../../../avr/include/stdint.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 lcd.c
+     /tmp/ccInGKnN.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccInGKnN.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccInGKnN.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccInGKnN.s:5      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccInGKnN.s:6      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccInGKnN.s:11     .text:0000000000000000 lcd_write_4
+     /tmp/ccInGKnN.s:79     .text:000000000000002e lcd_write_instruction_4d
+     /tmp/ccInGKnN.s:112    .text:0000000000000046 new_line
+     /tmp/ccInGKnN.s:141    .text:000000000000005a lcd_write_character_4d
+     /tmp/ccInGKnN.s:174    .text:0000000000000072 lcd_write_string_4d
+     /tmp/ccInGKnN.s:256    .text:00000000000000ca lcd_init_4d
+     /tmp/ccInGKnN.s:434    .text:0000000000000190 hidden_main
+     /tmp/ccInGKnN.s:487    .data:000000000000001e program_author
+     /tmp/ccInGKnN.s:482    .data:000000000000000d program_version
+     /tmp/ccInGKnN.s:477    .data:0000000000000000 program_date
+
+UNDEFINED SYMBOLS
+__do_copy_data

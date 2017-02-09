@@ -88,7 +88,12 @@ void lcd_init_4d(void);
 
 /******************************* Main Program Code *************************/
 void new_line(uint8_t line){
-    lcd_write_instruction_4d(lcd_SetCursor | (line==2)?lcd_LineTwo:lcd_LineOne);
+    if(line == 2){
+        lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+    }
+    else{
+        lcd_write_instruction_4d(lcd_SetCursor | lcd_LineTwo);
+    }
     _delay_us(80);                                  // 40 uS delay (min)
 }
 int hidden_main(void)

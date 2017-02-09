@@ -35,8 +35,8 @@
 #define lcd_LineTwo     0x40                    // start of line 2
 //#define   lcd_LineThree   0x14                  // start of line 3 (20x4)
 //#define   lcd_lineFour    0x54                  // start of line 4 (20x4)
-//#define   lcd_LineThree   0x10                  // start of line 3 (16x4)
-//#define   lcd_lineFour    0x50                  // start of line 4 (16x4)
+#define   lcd_LineThree   0x10                  // start of line 3 (16x4)
+#define   lcd_lineFour    0x50                  // start of line 4 (16x4)
 
 // LCD instructions
 #define lcd_Clear           0b00000001          // replace all characters with ASCII 'space'
