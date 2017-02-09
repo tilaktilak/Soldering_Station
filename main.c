@@ -153,6 +153,9 @@ float millis(void){// OVERFLOW in 3,4E38 ms
 }
 
 #define TEMP_MAX 480
+#define DEFAULT_TEMP 220
+float old_error,dt,new_error,derivative,integral,KP,KI,KD,command;
+long new_time,old_time;
 
 void set_temp(float temp){
     uint16_t duty_cycle;
@@ -190,6 +193,7 @@ enum e_state {Update_Consigne,
     Process_Commmand,
     Send_Log};
 enum e_state state = Update_Consigne;
+uint8_t flag_change_consigne = 0;
 
 int counts = 0;
 void encoder_init(void){
@@ -219,7 +223,7 @@ uint8_t enc_switch_state(void){
 }
 ISR (INT1_vect){
     // A
-    if(state == Update_Consigne){
+    if(flag_change_consigne){
         if(PIND&(1<<PIND2)){
             counts ++;
         }
@@ -230,16 +234,31 @@ ISR (INT1_vect){
     }
 }
 
+int get_counts(void){
+    int result;
+    cli();
+    result = counts;
+    sei();
+    return result;
+}
+
 
 uint8_t line1[]   = "Starting up ...";
+uint8_t line2[]   = "################ ";
 //uint8_t line2[]   = "";
 void update_screen(void){
     lcd_write_instruction_4d(lcd_Home);
     _delay_us(80);                                  // 40 uS delay (min)
     lcd_write_string_4d(line1);
-    //new_line(2);
-    //lcd_write_string_4d(line2);
+    new_line(2);
+    lcd_write_string_4d(line2);
+//#new_line(1);
 }
+
+uint16_t Consigne = DEFAULT_TEMP;
+long last_display_update_ms = 0;
+
+long time;
 
 int main(void)
 {
@@ -260,46 +279,55 @@ int main(void)
     lcd_write_string_4d(line1);
     printf("Debut\r\n");
 
+    while(1);
 
-}
+
     encoder_init();
     adc_init();
 
-    time_t start,end;
+    float tempp;
+    Consigne = DEFAULT_TEMP;
 
     for (;;) {
 
-        printf("%i\n\r",(int)get_temp());
-        //printf("COUNT %i\t%i\r\n,",counts,enc_switch_state());
         switch(state){
             case Update_Consigne:
                 set_temp(0.f);
+                Consigne = DEFAULT_TEMP + (get_counts()>>2);
 
-                snprintf((char*)line1,16,"Temp %i           ",counts>>2);
+                snprintf((char*)line1,16,"Set : %i C         ",Consigne);
                 if(enc_switch_state()){
+
                     while(enc_switch_state());
                     _delay_ms(500);
                     while(!enc_switch_state()){
+                        flag_change_consigne = 1;
                         update_screen();
-                        printf("Update Consigne\r\n");
-                        snprintf((char*)line1,16,"Temp %i           ",counts>>2);
-                        printf("[%s]\n",line1);
+                        Consigne = DEFAULT_TEMP + (get_counts()>>2);
+                        snprintf((char*)line1,16,"Set : %i C         ",Consigne);
+                        printf("[%s]\n\r",line1);
                     }
                     _delay_ms(500);
                 }
+                flag_change_consigne = 0;
                 state = Process_Commmand;
                 break;
             case Process_Commmand:
+                snprintf((char*)line1,16,"Temp %i C         ",Consigne);
+                update_screen();
                 new_time = millis();
                 dt       = new_time - old_time; 
                 old_time = new_time;
                 // Update display content
-                float tempp = get_temp();
-                    if(tempp< 0.0){
-                        //lcd.print("No Iron");
-                    }
-                    last_display_update_ms = new_time;
+                tempp = get_temp();
+                if(tempp< 0.0){
+                    //lcd.print("No Iron");
+                    snprintf((char*)line2,16,"No Iron           ");
+                    update_screen();
+
                 }
+                last_display_update_ms = new_time;
+
                 new_error = Consigne - tempp; // Process new error
                 derivative = (new_error-old_error)/(dt/1000);
                 integral += new_error*(dt/1000);
