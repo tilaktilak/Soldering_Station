@@ -115,6 +115,43 @@ void timer1_init(void){
     OCR1A = 3125;
     sei();             // enable all interrupts
 }
+
+long int sec;
+void timer0_init(void){
+    cli();
+
+    TCCR0A = 0;
+    TCCR0B = 0;
+    TCNT0  = 0;
+
+    // Presc 1024
+    TCCR0B |= _BV(CS02) | _BV(CS00);
+
+    TIMSK0 |= _BV(TOIE0);
+    sei();
+}
+
+ISR(TIMER0_OVF_vect)
+{
+    sec+=1;//(1024.f/16E6);
+} 
+
+float seconds(void){
+    float result;
+    cli();
+    result = sec*(255.f*1024.f/16E6);
+    sei();
+    return result;
+}
+
+float millis(void){// OVERFLOW in 3,4E38 ms
+    float result;
+    cli();
+    result = sec*(255.f*1024.f/(16E6*10E-3));
+    sei();
+    return result;
+}
+
 #define TEMP_MAX 480
 
 void set_temp(float temp){
@@ -150,7 +187,6 @@ float get_temp(void){
 
 
 enum e_state {Update_Consigne,
-    Update_Screen,
     Process_Commmand,
     Send_Log};
 enum e_state state = Update_Consigne;
@@ -185,11 +221,11 @@ ISR (INT1_vect){
     // A
     if(state == Update_Consigne){
         if(PIND&(1<<PIND2)){
-                counts ++;
+            counts ++;
         }
         else{
-                counts --;
-            
+            counts --;
+
         }
     }
 }
@@ -207,6 +243,8 @@ void update_screen(void){
 
 int main(void)
 {
+    //long newPosition;
+    //long oldPosition = -999;
 
 
     uart_init();
@@ -216,12 +254,18 @@ int main(void)
     stdout = &uart_output;
 
     //timer1_init();
+    timer0_init();
     lcd_init_4d();
 
     lcd_write_string_4d(line1);
     printf("Debut\r\n");
+
+
+}
     encoder_init();
     adc_init();
+
+    time_t start,end;
 
     for (;;) {
 
@@ -229,6 +273,8 @@ int main(void)
         //printf("COUNT %i\t%i\r\n,",counts,enc_switch_state());
         switch(state){
             case Update_Consigne:
+                set_temp(0.f);
+
                 snprintf((char*)line1,16,"Temp %i           ",counts>>2);
                 if(enc_switch_state()){
                     while(enc_switch_state());
@@ -241,12 +287,41 @@ int main(void)
                     }
                     _delay_ms(500);
                 }
-                state = Update_Screen;
-                break;
-            case Update_Screen:
                 state = Process_Commmand;
                 break;
             case Process_Commmand:
+                new_time = millis();
+                dt       = new_time - old_time; 
+                old_time = new_time;
+                // Update display content
+                float tempp = get_temp();
+                    if(tempp< 0.0){
+                        //lcd.print("No Iron");
+                    }
+                    last_display_update_ms = new_time;
+                }
+                new_error = Consigne - tempp; // Process new error
+                derivative = (new_error-old_error)/(dt/1000);
+                integral += new_error*(dt/1000);
+
+                old_error = new_error;
+
+                /*KP = 0.09; Réglage OK mais pas hyper stable
+                  KD = -0.13;
+                  KI = 0.0026;*/
+
+                KP = 0.17;
+                KD = 0.0; // Rend instable le système mm avec petites valeurs
+                KI = 0.005;
+                // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
+                command = KP*new_error + KD*derivative + KI*integral;
+                if(command >= 0.0){
+                    set_temp(command);
+                }
+                else{
+                    set_temp(0.0);
+                }
+
                 state = Send_Log;
                 break;
             case Send_Log:
