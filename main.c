@@ -159,10 +159,9 @@ long new_time,old_time;
 
 void set_temp(float temp){
     uint16_t duty_cycle;
-    int duty_cycle_int = temp * (TEMP_MAX / 100.0f);
-    // FIXME : Dutycycle not in pourcent but model was made as this
-    //int duty_cycle_int = (int)(temp * (100/TEMP_MAX));
-    duty_cycle = (uint16_t)(duty_cycle_int) * 31;
+    int duty_cycle_int = ((int)temp)*25;
+
+    duty_cycle = (uint16_t)(duty_cycle_int);
     if(duty_cycle>=2500) duty_cycle = 2500;
     if(duty_cycle<0)    duty_cycle = 0;
 
@@ -256,7 +255,6 @@ void update_screen(void){
 }
 
 uint16_t Consigne = DEFAULT_TEMP;
-long last_display_update_ms = 0;
 
 long time;
 
@@ -277,7 +275,7 @@ int main(void)
     lcd_init_4d();
 
     //lcd_write_string_4d(line1);
-    printf("Debut\r\n");
+    //printf("Debut\r\n");
 
 
 
@@ -287,21 +285,26 @@ int main(void)
     float tempp;
     Consigne = DEFAULT_TEMP;
     uint8_t flag_no_iron = 0;
+    float time_no_sleep = 0.f;
+
+    uint8_t sleep_mode = 0;
 
     for (;;) {
         update_screen();
 
         switch(state){
             case Update_Consigne:
-                set_temp(0.f);
                 Consigne = DEFAULT_TEMP + (get_counts()>>2);
 
                 snprintf((char*)line1,16,"Set : %i C         ",Consigne);
                 if(enc_switch_state()){
 
+
                     while(enc_switch_state());
                     _delay_ms(500);
                     while(!enc_switch_state()){
+                        if(sleep_mode){sleep_mode = 0;}
+                        set_temp(0.f);
                         flag_change_consigne = 1;
                         update_screen();
                         Consigne = DEFAULT_TEMP + (get_counts()>>2);
@@ -319,9 +322,17 @@ int main(void)
                 new_time = millis();
                 dt       = new_time - old_time; 
                 old_time = new_time;
+                time_no_sleep += dt;
+                printf("timenosleep %f\r\n",(double)time_no_sleep);
+                if(time_no_sleep > 10.f*60.f*100.f){
+                    sleep_mode = 1;
+                    time_no_sleep = 0;
+                    printf("Sleep mode\n");
+                }
                 // Update display content
                 tempp = get_temp();
-                snprintf((char*)line2,16," %i C             ",(int)tempp);
+                snprintf((char*)line2,16," %i C   %s       ",(int)tempp,
+                        (sleep_mode)?"SLEEP":"");
                 if(tempp< 0.0){
                     snprintf((char*)line2,16,"No Iron               ");
                     update_screen();
@@ -330,8 +341,6 @@ int main(void)
                 else{
                     flag_no_iron = 0;
                 }
-                last_display_update_ms = new_time;
-
                 new_error = Consigne - tempp; // Process new error
                 derivative = (new_error-old_error)/(dt/1000);
                 integral += new_error*(dt/1000);
@@ -342,16 +351,21 @@ int main(void)
                   KD = -0.13;
                   KI = 0.0026;*/
 
-                KP = 0.17;
-                KD = 0.0; // Rend instable le système mm avec petites valeurs
-                KI = 0.005;
+                KP = 10.f;
+                KD = 0.0f; // Rend instable le système mm avec petites valeurs
+                KI = 10.f;
                 // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
+                printf("%d ; %d\r\n",(int)millis(),(int)get_temp());
                 command = KP*new_error + KD*derivative + KI*integral;
-                if((command >= 0.0) && !flag_no_iron){
+
+                if((command >= 0.0f) && !flag_no_iron &&!sleep_mode){
                     set_temp(command);
                 }
+                else if(command < 0.f){
+                    set_temp(0.0f);
+                }
                 else{
-                    set_temp(0.0);
+                    set_temp(0.f);
                 }
 
                 state = Send_Log;
