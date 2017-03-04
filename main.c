@@ -111,7 +111,7 @@ void timer1_init(void){
         | _BV(CS11)
         | _BV(CS10);
 
-    OCR1B = 0;//156;//10*3125/100;
+    OCR1B = 0;
     OCR1A = 3125;
     sei();             // enable all interrupts
 }
@@ -153,7 +153,7 @@ float millis(void){// OVERFLOW in 3,4E38 ms
 }
 
 #define TEMP_MAX 480
-#define DEFAULT_TEMP 220
+#define DEFAULT_TEMP 240
 float old_error,dt,new_error,derivative,integral,KP,KI,KD,command;
 long new_time,old_time;
 
@@ -260,10 +260,6 @@ long time;
 
 int main(void)
 {
-    //long newPosition;
-    //long oldPosition = -999;
-
-
     uart_init();
 
     sei();
@@ -273,11 +269,6 @@ int main(void)
     timer1_init();
     timer0_init();
     lcd_init_4d();
-
-    //lcd_write_string_4d(line1);
-    //printf("Debut\r\n");
-
-
 
     encoder_init();
     adc_init();
@@ -347,13 +338,11 @@ int main(void)
 
                 old_error = new_error;
 
-                /*KP = 0.09; Réglage OK mais pas hyper stable
-                  KD = -0.13;
-                  KI = 0.0026;*/
-
+                //KP = 10.f;
+                //KD = 0.0f; // Rend instable le système mm avec petites valeurs
+                //KI = 1.f;
                 KP = 10.f;
-                KD = 0.0f; // Rend instable le système mm avec petites valeurs
-                KI = 10.f;
+                KI = 1.f;
                 // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
                 printf("%d ; %d\r\n",(int)millis(),(int)get_temp());
                 command = KP*new_error + KD*derivative + KI*integral;
