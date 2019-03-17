@@ -1,5 +1,3 @@
-# Welding station
-
 An arduino base project to control a simple soldering Iron from ebay.
 
 The temperature is read and set through an rotary encoder and a LCD graphic display.
