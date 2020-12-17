@@ -128,11 +128,19 @@ int hidden_main(void)
 */
 void lcd_init_4d(void)
 {
-// configure the microprocessor pins for the data lines
-    lcd_D7_ddr |= (1<<lcd_D7_bit);                  // 4 data lines - output
-    lcd_D6_ddr |= (1<<lcd_D6_bit);
-    lcd_D5_ddr |= (1<<lcd_D5_bit);
+
+    lcd_D5_port |= (1<<lcd_D5_bit);
+    lcd_D4_port |= (1<<lcd_D4_bit);
+    lcd_B0_port |= (1<<lcd_B0_bit);
+    lcd_D7_port |= (1<<lcd_D7_bit);
+    lcd_E_port |= (1<<lcd_E_bit);
+    lcd_RS_port |= (1<<lcd_RS_bit);
+
+    // configure the microprocessor pins for the data lines
+    lcd_D5_ddr |= (1<<lcd_D5_bit);                  // 4 data lines - output
     lcd_D4_ddr |= (1<<lcd_D4_bit);
+    lcd_B0_ddr |= (1<<lcd_B0_bit);
+    lcd_D7_ddr |= (1<<lcd_D7_bit);
 
 //// configure the microprocessor pins for the control lines
     lcd_E_ddr |= (1<<lcd_E_bit);                    // E line - output
@@ -265,17 +273,17 @@ void lcd_write_instruction_4d(uint8_t theInstruction)
 */
 void lcd_write_4(uint8_t theByte)
 {
-    lcd_D7_port &= ~(1<<lcd_D7_bit);                        // assume that data is '0'
-    if (theByte & 1<<7) lcd_D7_port |= (1<<lcd_D7_bit);     // make data = '1' if necessary
+    lcd_D5_port &= ~(1<<lcd_D5_bit);                        // assume that data is '0'
+    if (theByte & 1<<7) lcd_D5_port |= (1<<lcd_D5_bit);     // make data = '1' if necessary
 
-    lcd_D6_port &= ~(1<<lcd_D6_bit);                        // repeat for each data bit
-    if (theByte & 1<<6) lcd_D6_port |= (1<<lcd_D6_bit);
+    lcd_D4_port &= ~(1<<lcd_D4_bit);                        // repeat for each data bit
+    if (theByte & 1<<6) lcd_D4_port |= (1<<lcd_D4_bit);
 
-    lcd_D5_port &= ~(1<<lcd_D5_bit);
-    if (theByte & 1<<5) lcd_D5_port |= (1<<lcd_D5_bit);
+    lcd_B0_port &= ~(1<<lcd_B0_bit);
+    if (theByte & 1<<5) lcd_B0_port |= (1<<lcd_B0_bit);
 
-    lcd_D4_port &= ~(1<<lcd_D4_bit);
-    if (theByte & 1<<4) lcd_D4_port |= (1<<lcd_D4_bit);
+    lcd_D7_port &= ~(1<<lcd_D7_bit);
+    if (theByte & 1<<4) lcd_D7_port |= (1<<lcd_D7_bit);
 
 // write the data
                                                     // 'Address set-up time' (40 nS)
@@ -284,4 +292,3 @@ void lcd_write_4(uint8_t theByte)
     lcd_E_port &= ~(1<<lcd_E_bit);                  // Enable pin low
     _delay_us(1);                                   // implement 'Data hold time' (10 nS) and 'Enable cycle time' (500 nS)
 }
-

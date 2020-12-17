@@ -6,21 +6,21 @@
 
 //LiquidCrystal lcd(12, 11,     7, 8, 4, 5);
     //LiquidCrystal(rs, enable, d4, d5, d6, d7)  
-#define lcd_D7_port     PORTD                   // lcd D7 connection
-#define lcd_D7_bit      PORTD5
-#define lcd_D7_ddr      DDRD
+#define lcd_D5_port     PORTD                   // lcd D7 connection
+#define lcd_D5_bit      PORTD5
+#define lcd_D5_ddr      DDRD
 
-#define lcd_D6_port     PORTD                   // lcd D6 connection
-#define lcd_D6_bit      PORTD4
-#define lcd_D6_ddr      DDRD
-
-#define lcd_D5_port     PORTB                   // lcd D5 connection
-#define lcd_D5_bit      PORTB0
-#define lcd_D5_ddr      DDRB
-
-#define lcd_D4_port     PORTD                   // lcd D4 connection
-#define lcd_D4_bit      PORTD7
+#define lcd_D4_port     PORTD                   // lcd D6 connection
+#define lcd_D4_bit      PORTD4
 #define lcd_D4_ddr      DDRD
+
+#define lcd_B0_port     PORTB                   // lcd D5 connection
+#define lcd_B0_bit      PORTB0
+#define lcd_B0_ddr      DDRB
+
+#define lcd_D7_port     PORTD                   // lcd D4 connection
+#define lcd_D7_bit      PORTD7
+#define lcd_D7_ddr      DDRD
 
 #define lcd_E_port      PORTB                   // lcd Enable pin
 #define lcd_E_bit       PORTB3

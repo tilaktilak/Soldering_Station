@@ -88,7 +88,7 @@ FILE uart_output = FDEV_SETUP_STREAM(uart_putchar,
 #define TIMER_FREQ_HZ   1
 
 void timer1_init(void){
-    // Init Pin PB0 Output, set to 0
+    // Init Pin PB2 Output, set to 0
     DDRB |= (1<<DDB2);
     PORTB &= ~(1<<PORTB2);
 
@@ -134,7 +134,7 @@ void timer0_init(void){
 ISR(TIMER0_OVF_vect)
 {
     sec+=1;//(1024.f/16E6);
-} 
+}
 
 float seconds(void){
     float result;
@@ -153,8 +153,11 @@ float millis(void){// OVERFLOW in 3,4E38 ms
 }
 
 #define TEMP_MAX 480
-#define DEFAULT_TEMP 240
-float old_error,dt,new_error,derivative,integral,KP,KI,KD,command;
+#define DEFAULT_TEMP 280
+#define SLEEP_TEMP 0
+
+float dt,new_error;
+float THRESHOLD;
 long new_time,old_time;
 
 void set_temp(float temp){
@@ -188,11 +191,12 @@ float get_temp(void){
 }
 
 
-enum e_state {Update_Consigne,
-    Process_Commmand,
-    Send_Log};
-enum e_state state = Update_Consigne;
-uint8_t flag_change_consigne = 0;
+enum e_state {UpdateConsigne,
+    ProcessCommand,
+    SleepMode,
+    NoIron,
+    };
+enum e_state state = UpdateConsigne;
 
 int counts = 0;
 void encoder_init(void){
@@ -210,27 +214,85 @@ void encoder_init(void){
     counts = 0;
 
     // Set Exti
-    // Trigger INT1 falling edge
-    EICRA |= (1<<ISC11);
-    // Enable INT1
-    EIMSK |= (1<<INT1);
+    PCMSK2 = 0;
+    PCICR = 0;
+
+    PCICR |= (1 << PCIE0);
+    PCMSK2 |= (1<<PCINT18);
+    PCMSK2 |= (1<<PCINT19);
+
+
+    PCICR |= (1 << PCIE2);    // set PCIE2 to enable PCMSK0 scan
+    PCMSK2 |= (1 << PCINT22);  // set PCINT0 to trigger an interrupt on state change 
+
+
 }
 
 // Return 1 if pressed
 uint8_t enc_switch_state(void){
-    return !(PIND&(1<<PIND6)); 
+    return !(PIND&(1<<PIND6));
 }
-ISR (INT1_vect){
-    // A
-    if(flag_change_consigne){
-        if(PIND&(1<<PIND2)){
-            counts ++;
-        }
-        else{
-            counts --;
+volatile uint8_t portdhistory = 0xFF;     // default is high because the pull-up
+volatile uint8_t cycle_press = 0;
+volatile float awake_time = 0.f;
 
+void increment_counts(void){
+    if((DEFAULT_TEMP+2*counts)<TEMP_MAX){
+        counts++;
+    }
+}
+
+void decrement_counts(void){
+    if((DEFAULT_TEMP+2*counts)>0){
+        counts--;
+    }
+}
+
+ISR (PCINT2_vect){
+    uint8_t changedbits;
+    changedbits = PIND ^ portdhistory;
+    portdhistory = PIND;
+
+    // User Interation : Reset awake time
+    awake_time = millis();
+
+    // State machine for Encoder Press Unbouncing
+    if(changedbits & (1<<PIND6)){
+        if(!(PIND&(1<<PIND6))){// Button is pressed
+            cycle_press = 1;
+        }
+        else{//Button is unpressed
+            if(cycle_press==1){
+                cycle_press = 0;
+                state=(state==UpdateConsigne)?ProcessCommand:UpdateConsigne;
+            }
         }
     }
+
+    // Encoder Counting
+    if(state==UpdateConsigne){
+        if(changedbits & (1<<PIND2)){// Edge on D2
+            if(PIND&(1<<PIND2))//Rising
+            {
+                if(PIND&(1<<PIND3)){
+                    increment_counts();
+                }
+                else{
+                    decrement_counts();
+                }
+            }
+            else//Falling
+            {
+                if(!(PIND&(1<<PIND3))){
+                    increment_counts();
+                }
+                else{
+                    decrement_counts();
+                }
+            }
+        }
+    }
+
 }
 
 int get_counts(void){
@@ -268,101 +330,85 @@ int main(void)
 
     timer1_init();
     timer0_init();
+    encoder_init();
     lcd_init_4d();
 
-    encoder_init();
     adc_init();
 
-    float tempp;
+    float temp;
     Consigne = DEFAULT_TEMP;
-    uint8_t flag_no_iron = 0;
-    float time_no_sleep = 0.f;
 
-    uint8_t sleep_mode = 0;
+    float blinky = 0.f;
+    uint8_t onoff = 0;
 
     for (;;) {
-        update_screen();
+        // Measure Temperature
+        temp = get_temp();
+        if(temp<0.){
+            state=NoIron;
+        }
+
+        // Handle Sleep Mode Transition
+        if((millis()-awake_time)>20.f*60.f*100.f){
+            state = SleepMode;
+            awake_time = millis();
+        }
 
         switch(state){
-            case Update_Consigne:
-                Consigne = DEFAULT_TEMP + (get_counts()>>2);
+            case UpdateConsigne:
+                set_temp(0.f);
 
-                snprintf((char*)line1,16,"Set : %i C         ",Consigne);
-                if(enc_switch_state()){
-
-
-                    while(enc_switch_state());
-                    _delay_ms(500);
-                    while(!enc_switch_state()){
-                        if(sleep_mode){sleep_mode = 0;}
-                        set_temp(0.f);
-                        flag_change_consigne = 1;
-                        update_screen();
-                        Consigne = DEFAULT_TEMP + (get_counts()>>2);
-                        snprintf((char*)line1,16,"Set : %i C         ",Consigne);
-                        printf("[%s]\n\r",line1);
-                    }
-                    _delay_ms(500);
+                Consigne = DEFAULT_TEMP + 2*get_counts();
+                snprintf((char*)line2,16," %i C          ",(int)temp);
+                if((millis()-blinky)>50.f){
+                    blinky =millis();
+                    onoff = !onoff;
                 }
-                flag_change_consigne = 0;
-                state = Process_Commmand;
-                break;
-            case Process_Commmand:
-                snprintf((char*)line1,16,"Temp %i C         ",Consigne);
-                update_screen();
-                new_time = millis();
-                dt       = new_time - old_time; 
-                old_time = new_time;
-                time_no_sleep += dt;
-                printf("timenosleep %f\r\n",(double)time_no_sleep);
-                if(time_no_sleep > 10.f*60.f*100.f){
-                    sleep_mode = 1;
-                    time_no_sleep = 0;
-                    printf("Sleep mode\n");
-                }
-                // Update display content
-                tempp = get_temp();
-                snprintf((char*)line2,16," %i C   %s       ",(int)tempp,
-                        (sleep_mode)?"SLEEP":"");
-                if(tempp< 0.0){
-                    snprintf((char*)line2,16,"No Iron               ");
+                if(onoff){
+                    snprintf((char*)line1,16,"    : %i C         ",Consigne);
                     update_screen();
-                    flag_no_iron = 1;
                 }
                 else{
-                    flag_no_iron = 0;
+                    snprintf((char*)line1,16,"Set : %i C         ",Consigne);
+                    update_screen();
                 }
-                new_error = Consigne - tempp; // Process new error
-                derivative = (new_error-old_error)/(dt/1000);
-                integral += new_error*(dt/1000);
 
-                old_error = new_error;
+                break;
 
-                //KP = 10.f;
-                //KD = 0.0f; // Rend instable le système mm avec petites valeurs
-                //KI = 1.f;
-                KP = 10.f;
-                KI = 1.f;
-                // SIMU : en 5sec à 90%, 10sec à 100%, pas de dépassement
-                printf("%d ; %d\r\n",(int)millis(),(int)get_temp());
-                command = KP*new_error + KD*derivative + KI*integral;
-
-                if((command >= 0.0f) && !flag_no_iron &&!sleep_mode){
-                    set_temp(command);
+            case NoIron:
+                // Update display content
+                snprintf((char*)line2,16,"No Iron               ");
+                update_screen();
+                if(temp>=0.0){
+                    state=ProcessCommand;
                 }
-                else if(command < 0.f){
+                set_temp(0.f);
+                break;
+            case SleepMode:
+                // Update display content
+                snprintf((char*)line2,16," %i C   %s       ",(int)temp,
+                        "SLEEP");
+                update_screen();
+                set_temp(SLEEP_TEMP);
+                // Out of sleep mode on ISR Encoder Pressed
+                break;
+
+            case ProcessCommand:
+
+                // Update display content
+                snprintf((char*)line2,16," %i C          ",(int)temp);
+                update_screen();
+                new_error = Consigne - temp; // Process new error
+                THRESHOLD = 0.f;
+
+                if(new_error<THRESHOLD){// Cool down
                     set_temp(0.0f);
                 }
                 else{
-                    set_temp(0.f);
+                    set_temp(TEMP_MAX);// Full noise
                 }
-
-                state = Send_Log;
-                break;
-            case Send_Log:
-                state = Update_Consigne;
                 break;
         }
-    }	
+    }
     return 0; /* never reached */
 }
