@@ -196,7 +196,7 @@ enum e_state {UpdateConsigne,
     SleepMode,
     NoIron,
     };
-enum e_state state = UpdateConsigne;
+enum e_state state = ProcessCommand;
 
 int counts = 0;
 void encoder_init(void){
@@ -341,6 +341,8 @@ int main(void)
     float blinky = 0.f;
     uint8_t onoff = 0;
 
+    float freq_display = 0.f;
+
     for (;;) {
         // Measure Temperature
         temp = get_temp();
@@ -396,8 +398,12 @@ int main(void)
             case ProcessCommand:
 
                 // Update display content
-                snprintf((char*)line2,16," %i C          ",(int)temp);
-                update_screen();
+                if((millis()-freq_display)>20.f){
+                    snprintf((char*)line1,16,"Set : %i C         ",Consigne);
+                    snprintf((char*)line2,16," %i C          ",(int)temp);
+                    update_screen();
+                    freq_display = millis();
+                }
                 new_error = Consigne - temp; // Process new error
                 THRESHOLD = 0.f;
 
