@@ -248,6 +248,8 @@ void decrement_counts(void){
     }
 }
 
+float time_last_press = 0.f;
+
 ISR (PCINT2_vect){
     uint8_t changedbits;
     changedbits = PIND ^ portdhistory;
@@ -260,11 +262,15 @@ ISR (PCINT2_vect){
     if(changedbits & (1<<PIND6)){
         if(!(PIND&(1<<PIND6))){// Button is pressed
             cycle_press = 1;
+            time_last_press = millis();
         }
         else{//Button is unpressed
             if(cycle_press==1){
                 cycle_press = 0;
                 state=(state==UpdateConsigne)?ProcessCommand:UpdateConsigne;
+                if((millis()-time_last_press)>20.f){
+                    counts=0;
+                }
             }
         }
     }
