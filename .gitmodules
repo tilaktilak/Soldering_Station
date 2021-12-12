@@ -1,0 +1,3 @@
+[submodule "ST7735"]
+	path = ST7735
+	url = https://github.com/Matiasus/ST7735.git

@@ -15,6 +15,8 @@
 #include <util/setbaud.h>
 #include <util/delay.h>
 #include "lcd.h"
+#include "st7735.h"
+
 
 /*
    The circuit:
@@ -38,6 +40,46 @@
 #define CLK 3
 #define DT 2
 #define SW 6
+
+// LCD 1 - init struct
+// ----------------------------------------------------------
+// Chip Select
+struct signal cs = { .ddr = &DDRB, .port = &PORTB, .pin = 2 };
+// Back Light
+struct signal bl = { .ddr = &DDRB, .port = &PORTB, .pin = 1 };
+// Data / Command
+struct signal dc = { .ddr = &DDRB, .port = &PORTB, .pin = 0 };
+// Reset
+struct signal rs = { .ddr = &DDRD, .port = &PORTD, .pin = 7 };
+// LCD struct
+struct st7735 lcd1 = { .cs = &cs, .bl = &bl, .dc = &dc, .rs = &rs };
+
+void lcd_init(void){
+  // start
+  //uint8_t start = 30;
+  // end
+  //uint8_t end = MAX_X - start;
+
+  //
+  // LCD 1
+  // ----------------------------------------------------------
+  // init lcd 1
+  ST7735_Init (&lcd1);
+  // clear screen
+  ST7735_ClearScreen (&lcd1, BLACK);
+  // set position X, Y
+  //ST7735_SetPosition (start + 5, 10);
+  // draw string
+  //ST7735_DrawString (&lcd1, "Loading DATA ...", WHITE, X2);
+
+  // draw Loading
+  //for (uint8_t i = start; i < end; i++) {
+  //  // draw rectangle
+  //  ST7735_DrawRectangle (&lcd1, start, i, 30, 40, RED);
+  //}
+}
+
+
 
 void adc_init(void){
 
@@ -160,17 +202,16 @@ float dt,new_error;
 float THRESHOLD;
 long new_time,old_time;
 
-void set_temp(float temp){
-    uint16_t duty_cycle;
-    int duty_cycle_int = ((int)temp)*25;
+void iron_on(void){
+    DDRD |= (1<<DDD5);
+    PORTD |= (1<<PORTD5);
+    return;
+}
 
-    duty_cycle = (uint16_t)(duty_cycle_int);
-    if(duty_cycle>=2500) duty_cycle = 2500;
-    if(duty_cycle<0)    duty_cycle = 0;
-
-    cli();
-    OCR1B = duty_cycle;
-    sei();
+void iron_off(void){
+    DDRD |= (1<<DDD5);
+    PORTD &= ~(1<<PORTD5);
+    return;
 }
 
 float get_temp(void){
@@ -313,12 +354,11 @@ int get_counts(void){
 uint8_t line1[]   = "Starting up ...";
 uint8_t line2[]   = "               ";
 void update_screen(void){
-    lcd_write_instruction_4d(lcd_Home);
-    _delay_us(80);                                  // 40 uS delay (min)
-    lcd_write_string_4d(line1);
-    new_line(2);
-    lcd_write_string_4d(line2);
-    new_line(1);
+    //ST7735_ClearScreen (&lcd1, BLACK);
+    ST7735_SetPosition (5, 5);
+    ST7735_DrawString (&lcd1, (char*)line1,WHITE, X3);
+    ST7735_SetPosition (5, 40);
+    ST7735_DrawString (&lcd1, (char*)line2, WHITE, X3);
 
 }
 
@@ -334,10 +374,9 @@ int main(void)
 
     stdout = &uart_output;
 
-    timer1_init();
+    lcd_init();
     timer0_init();
     encoder_init();
-    lcd_init_4d();
 
     adc_init();
 
@@ -364,20 +403,20 @@ int main(void)
 
         switch(state){
             case UpdateConsigne:
-                set_temp(0.f);
+                iron_off();
 
                 Consigne = DEFAULT_TEMP + 2*get_counts();
-                snprintf((char*)line2,16," %i C          ",(int)temp);
+                snprintf((char*)line2,16," %i C",(int)temp);
                 if((millis()-blinky)>50.f){
                     blinky =millis();
                     onoff = !onoff;
                 }
                 if(onoff){
-                    snprintf((char*)line1,16,"    : %i C         ",Consigne);
+                    snprintf((char*)line1,16,"    : %i C",Consigne);
                     update_screen();
                 }
                 else{
-                    snprintf((char*)line1,16,"Set : %i C         ",Consigne);
+                    snprintf((char*)line1,16,"Set : %i C",Consigne);
                     update_screen();
                 }
 
@@ -385,19 +424,19 @@ int main(void)
 
             case NoIron:
                 // Update display content
-                snprintf((char*)line2,16,"No Iron               ");
+                snprintf((char*)line2,16,"No Iron");
                 update_screen();
                 if(temp>=0.0){
                     state=ProcessCommand;
                 }
-                set_temp(0.f);
+                iron_off();
                 break;
             case SleepMode:
                 // Update display content
-                snprintf((char*)line2,16," %i C   %s       ",(int)temp,
+                snprintf((char*)line2,16," %i C   %s",(int)temp,
                         "SLEEP");
                 update_screen();
-                set_temp(SLEEP_TEMP);
+                iron_off();
                 // Out of sleep mode on ISR Encoder Pressed
                 break;
 
@@ -405,8 +444,8 @@ int main(void)
 
                 // Update display content
                 if((millis()-freq_display)>20.f){
-                    snprintf((char*)line1,16,"Set : %i C         ",Consigne);
-                    snprintf((char*)line2,16," %i C          ",(int)temp);
+                    snprintf((char*)line1,16,"Set : %i C",Consigne);
+                    snprintf((char*)line2,16," %i C",(int)temp);
                     update_screen();
                     freq_display = millis();
                 }
@@ -414,10 +453,10 @@ int main(void)
                 THRESHOLD = 0.f;
 
                 if(new_error<THRESHOLD){// Cool down
-                    set_temp(0.0f);
+                    iron_off();
                 }
                 else{
-                    set_temp(TEMP_MAX);// Full noise
+                    iron_on();
                 }
                 break;
         }
