@@ -1,0 +1,3522 @@
+   1               		.file	"st7735.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	ST7735_Reset
+  12               	ST7735_Reset:
+  13               	.LFB7:
+  14               		.file 1 "ST7735/lib/st7735.c"
+   1:ST7735/lib/st7735.c **** /** 
+   2:ST7735/lib/st7735.c ****  * --------------------------------------------------------------------------------------------+ 
+   3:ST7735/lib/st7735.c ****  * @name        ST773 1.8" LCD Driver
+   4:ST7735/lib/st7735.c ****  * --------------------------------------------------------------------------------------------+ 
+   5:ST7735/lib/st7735.c ****  *              Copyright (C) 2020 Marian Hrinko.
+   6:ST7735/lib/st7735.c ****  *              Written by Marian Hrinko (mato.hrinko@gmail.com)
+   7:ST7735/lib/st7735.c ****  *
+   8:ST7735/lib/st7735.c ****  * @author      Marian Hrinko
+   9:ST7735/lib/st7735.c ****  * @datum       13.10.2020
+  10:ST7735/lib/st7735.c ****  * @update      01.07.2021
+  11:ST7735/lib/st7735.c ****  * @file        st7735.c
+  12:ST7735/lib/st7735.c ****  * @version     2.0
+  13:ST7735/lib/st7735.c ****  * @tested      AVR Atmega328
+  14:ST7735/lib/st7735.c ****  *
+  15:ST7735/lib/st7735.c ****  * @depend      font.h
+  16:ST7735/lib/st7735.c ****  * --------------------------------------------------------------------------------------------+
+  17:ST7735/lib/st7735.c ****  * @descr       Version 1.0 -> applicable for 1 display
+  18:ST7735/lib/st7735.c ****  *              Version 2.0 -> applicable for more than 1 display
+  19:ST7735/lib/st7735.c ****  * --------------------------------------------------------------------------------------------+
+  20:ST7735/lib/st7735.c ****  * @inspir      http://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
+  21:ST7735/lib/st7735.c ****  *              https://github.com/adafruit/Adafruit-ST7735-Library
+  22:ST7735/lib/st7735.c ****  *              http://w8bh.net/avr/AvrTFT.pdf
+  23:ST7735/lib/st7735.c ****  */
+  24:ST7735/lib/st7735.c **** 
+  25:ST7735/lib/st7735.c **** #include <avr/io.h>
+  26:ST7735/lib/st7735.c **** #include <avr/pgmspace.h>
+  27:ST7735/lib/st7735.c **** #include <util/delay.h>
+  28:ST7735/lib/st7735.c **** #include "font.h"
+  29:ST7735/lib/st7735.c **** #include "st7735.h"
+  30:ST7735/lib/st7735.c **** 
+  31:ST7735/lib/st7735.c **** /** @array Init command */
+  32:ST7735/lib/st7735.c **** const uint8_t INIT_ST7735B[] PROGMEM = {
+  33:ST7735/lib/st7735.c ****   // number of initializers
+  34:ST7735/lib/st7735.c ****   5,
+  35:ST7735/lib/st7735.c ****   // ---------------------------------------
+  36:ST7735/lib/st7735.c ****   // Software reset - no arguments,  delay
+  37:ST7735/lib/st7735.c ****   0, 150, SWRESET,
+  38:ST7735/lib/st7735.c ****   // Out of sleep mode, no arguments, delay
+  39:ST7735/lib/st7735.c ****   0, 200, SLPOUT,  
+  40:ST7735/lib/st7735.c ****   // Set color mode, 1 argument delay
+  41:ST7735/lib/st7735.c ****   1,  10, COLMOD, 0x05,
+  42:ST7735/lib/st7735.c ****   // D7  D6  D5  D4  D3  D2  D1  D0
+  43:ST7735/lib/st7735.c ****   // MY  MX  MV  ML RGB  MH   -   -
+  44:ST7735/lib/st7735.c ****   // ------------------------------
+  45:ST7735/lib/st7735.c ****   // ------------------------------
+  46:ST7735/lib/st7735.c ****   // MV  MX  MY -> {MV (row / column exchange) MX (column address order), MY (row address order)}
+  47:ST7735/lib/st7735.c ****   // ------------------------------
+  48:ST7735/lib/st7735.c ****   //  0   0   0 -> begin left-up corner, end right-down corner 
+  49:ST7735/lib/st7735.c ****   //               left-right (normal view) 
+  50:ST7735/lib/st7735.c ****   //  0   0   1 -> begin left-down corner, end right-up corner 
+  51:ST7735/lib/st7735.c ****   //               left-right (Y-mirror)
+  52:ST7735/lib/st7735.c ****   //  0   1   0 -> begin right-up corner, end left-down corner 
+  53:ST7735/lib/st7735.c ****   //               right-left (X-mirror)
+  54:ST7735/lib/st7735.c ****   //  0   1   1 -> begin right-down corner, end left-up corner
+  55:ST7735/lib/st7735.c ****   //               right-left (X-mirror, Y-mirror)
+  56:ST7735/lib/st7735.c ****   //  1   0   0 -> begin left-up corner, end right-down corner
+  57:ST7735/lib/st7735.c ****   //               up-down (X-Y exchange)  
+  58:ST7735/lib/st7735.c ****   //  1   0   1 -> begin left-down corner, end right-up corner
+  59:ST7735/lib/st7735.c ****   //               down-up (X-Y exchange, Y-mirror)
+  60:ST7735/lib/st7735.c ****   //  1   1   0 -> begin right-up corner, end left-down corner 
+  61:ST7735/lib/st7735.c ****   //               up-down (X-Y exchange, X-mirror)  
+  62:ST7735/lib/st7735.c ****   //  1   1   1 -> begin right-down corner, end left-up corner
+  63:ST7735/lib/st7735.c ****   //               down-up (X-Y exchange, X-mirror, Y-mirror)
+  64:ST7735/lib/st7735.c ****   // ------------------------------
+  65:ST7735/lib/st7735.c ****   //  ML: vertical refresh order 
+  66:ST7735/lib/st7735.c ****   //      0 -> refresh top to bottom 
+  67:ST7735/lib/st7735.c ****   //      1 -> refresh bottom to top
+  68:ST7735/lib/st7735.c ****   // ------------------------------
+  69:ST7735/lib/st7735.c ****   // RGB: filter panel
+  70:ST7735/lib/st7735.c ****   //      0 -> RGB 
+  71:ST7735/lib/st7735.c ****   //      1 -> BGR        
+  72:ST7735/lib/st7735.c ****   // ------------------------------ 
+  73:ST7735/lib/st7735.c ****   //  MH: horizontal refresh order 
+  74:ST7735/lib/st7735.c ****   //      0 -> refresh left to right 
+  75:ST7735/lib/st7735.c ****   //      1 -> refresh right to left
+  76:ST7735/lib/st7735.c ****   // 0xA0 = 1010 0000
+  77:ST7735/lib/st7735.c ****   1,   0, MADCTL, 0xA0,
+  78:ST7735/lib/st7735.c ****   //2, 0, DISSET5, 0x15, 0x02,
+  79:ST7735/lib/st7735.c ****   //1, 0, INVCTR, 0x0,
+  80:ST7735/lib/st7735.c ****   //2, 10, PWCTR1, 0x02, 0x70,
+  81:ST7735/lib/st7735.c ****   //1, 0, PWCTR2, 0x05,
+  82:ST7735/lib/st7735.c ****   //2 , 0, PWCTR3, 0x01,0x02,
+  83:ST7735/lib/st7735.c ****   //4, 0, CASET, 0x00, 0x02, 0x00, 0x81,
+  84:ST7735/lib/st7735.c ****   //0,10, NORON,
+  85:ST7735/lib/st7735.c ****   // Main screen turn on
+  86:ST7735/lib/st7735.c ****   0, 200, DISPON 
+  87:ST7735/lib/st7735.c ****   // ---------------------------------------
+  88:ST7735/lib/st7735.c **** };
+  89:ST7735/lib/st7735.c **** 
+  90:ST7735/lib/st7735.c **** /** @var array Chache memory char index row */
+  91:ST7735/lib/st7735.c **** unsigned short int cacheMemIndexRow = 0;
+  92:ST7735/lib/st7735.c **** /** @var array Chache memory char index column */
+  93:ST7735/lib/st7735.c **** unsigned short int cacheMemIndexCol = 0;
+  94:ST7735/lib/st7735.c **** 
+  95:ST7735/lib/st7735.c **** /**
+  96:ST7735/lib/st7735.c ****  * @desc    Hardware Reset
+  97:ST7735/lib/st7735.c ****  *
+  98:ST7735/lib/st7735.c ****  * @param   struct signal *
+  99:ST7735/lib/st7735.c ****  *
+ 100:ST7735/lib/st7735.c ****  * @return  void
+ 101:ST7735/lib/st7735.c ****  */
+ 102:ST7735/lib/st7735.c **** void ST7735_Reset (struct signal * reset)
+ 103:ST7735/lib/st7735.c **** {
+  15               		.loc 1 103 0
+  16               		.cfi_startproc
+  17               	.LVL0:
+  18               	/* prologue: function */
+  19               	/* frame size = 0 */
+  20               	/* stack size = 0 */
+  21               	.L__stack_usage = 0
+  22 0000 FC01      		movw r30,r24
+ 104:ST7735/lib/st7735.c ****   // Actiavte pull-up resistor logical high on pin RST
+ 105:ST7735/lib/st7735.c ****   // posible write: SET_BIT (*(*reset).port, reset->pin)
+ 106:ST7735/lib/st7735.c ****   SET_BIT (*(reset->port), reset->pin);
+  23               		.loc 1 106 0
+  24 0002 A281      		ldd r26,Z+2
+  25 0004 B381      		ldd r27,Z+3
+  26 0006 4C91      		ld r20,X
+  27 0008 21E0      		ldi r18,lo8(1)
+  28 000a 30E0      		ldi r19,0
+  29 000c C901      		movw r24,r18
+  30               	.LVL1:
+  31 000e 0480      		ldd r0,Z+4
+  32 0010 00C0      		rjmp 2f
+  33               		1:
+  34 0012 880F      		lsl r24
+  35 0014 991F      		rol r25
+  36               		2:
+  37 0016 0A94      		dec r0
+  38 0018 02F4      		brpl 1b
+  39 001a 842B      		or r24,r20
+  40 001c 8C93      		st X,r24
+ 107:ST7735/lib/st7735.c ****   // DDR as output
+ 108:ST7735/lib/st7735.c ****   SET_BIT (*(reset->ddr), reset->pin);
+  41               		.loc 1 108 0
+  42 001e A081      		ld r26,Z
+  43 0020 B181      		ldd r27,Z+1
+  44 0022 4C91      		ld r20,X
+  45 0024 C901      		movw r24,r18
+  46 0026 0480      		ldd r0,Z+4
+  47 0028 00C0      		rjmp 2f
+  48               		1:
+  49 002a 880F      		lsl r24
+  50 002c 991F      		rol r25
+  51               		2:
+  52 002e 0A94      		dec r0
+  53 0030 02F4      		brpl 1b
+  54 0032 842B      		or r24,r20
+  55 0034 8C93      		st X,r24
+  56               	.LVL2:
+  57               	.LBB8:
+  58               	.LBB9:
+  59               		.file 2 "/usr/lib/avr/include/util/delay.h"
+   1:/usr/lib/avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/lib/avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/lib/avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/lib/avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/lib/avr/include/util/delay.h **** 
+   6:/usr/lib/avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/lib/avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/lib/avr/include/util/delay.h **** 
+   9:/usr/lib/avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/lib/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/lib/avr/include/util/delay.h **** 
+  12:/usr/lib/avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/lib/avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/lib/avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/lib/avr/include/util/delay.h ****      distribution.
+  16:/usr/lib/avr/include/util/delay.h **** 
+  17:/usr/lib/avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/lib/avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/lib/avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/lib/avr/include/util/delay.h **** 
+  21:/usr/lib/avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/lib/avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/lib/avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/lib/avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/lib/avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/lib/avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/lib/avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/lib/avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/lib/avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/lib/avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/lib/avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/lib/avr/include/util/delay.h **** 
+  33:/usr/lib/avr/include/util/delay.h **** /* $Id$ */
+  34:/usr/lib/avr/include/util/delay.h **** 
+  35:/usr/lib/avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/lib/avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/lib/avr/include/util/delay.h **** 
+  38:/usr/lib/avr/include/util/delay.h **** #ifndef __DOXYGEN__
+  39:/usr/lib/avr/include/util/delay.h **** #  ifndef __HAS_DELAY_CYCLES
+  40:/usr/lib/avr/include/util/delay.h **** #    define __HAS_DELAY_CYCLES 1
+  41:/usr/lib/avr/include/util/delay.h **** #  endif
+  42:/usr/lib/avr/include/util/delay.h **** #endif  /* __DOXYGEN__ */
+  43:/usr/lib/avr/include/util/delay.h **** 
+  44:/usr/lib/avr/include/util/delay.h **** #include <inttypes.h>
+  45:/usr/lib/avr/include/util/delay.h **** #include <util/delay_basic.h>
+  46:/usr/lib/avr/include/util/delay.h **** #include <math.h>
+  47:/usr/lib/avr/include/util/delay.h **** 
+  48:/usr/lib/avr/include/util/delay.h **** /** \file */
+  49:/usr/lib/avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  50:/usr/lib/avr/include/util/delay.h ****     \code
+  51:/usr/lib/avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  52:/usr/lib/avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  53:/usr/lib/avr/include/util/delay.h ****     #include <util/delay.h>
+  54:/usr/lib/avr/include/util/delay.h ****     \endcode
+  55:/usr/lib/avr/include/util/delay.h **** 
+  56:/usr/lib/avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  57:/usr/lib/avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  58:/usr/lib/avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  59:/usr/lib/avr/include/util/delay.h ****     used.
+  60:/usr/lib/avr/include/util/delay.h **** 
+  61:/usr/lib/avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  62:/usr/lib/avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  63:/usr/lib/avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  64:/usr/lib/avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  65:/usr/lib/avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  66:/usr/lib/avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  67:/usr/lib/avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  68:/usr/lib/avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  69:/usr/lib/avr/include/util/delay.h **** 
+  70:/usr/lib/avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  71:/usr/lib/avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  72:/usr/lib/avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  73:/usr/lib/avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  74:/usr/lib/avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  75:/usr/lib/avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  76:/usr/lib/avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  77:/usr/lib/avr/include/util/delay.h ****     routines linked into the application.
+  78:/usr/lib/avr/include/util/delay.h **** 
+  79:/usr/lib/avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  80:/usr/lib/avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  81:/usr/lib/avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  82:/usr/lib/avr/include/util/delay.h **** 
+  83:/usr/lib/avr/include/util/delay.h **** */
+  84:/usr/lib/avr/include/util/delay.h **** 
+  85:/usr/lib/avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  86:/usr/lib/avr/include/util/delay.h **** static __inline__ void _delay_us(double __us) __attribute__((__always_inline__));
+  87:/usr/lib/avr/include/util/delay.h **** static __inline__ void _delay_ms(double __ms) __attribute__((__always_inline__));
+  88:/usr/lib/avr/include/util/delay.h **** #endif
+  89:/usr/lib/avr/include/util/delay.h **** 
+  90:/usr/lib/avr/include/util/delay.h **** #ifndef F_CPU
+  91:/usr/lib/avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  92:/usr/lib/avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  93:/usr/lib/avr/include/util/delay.h **** /** \ingroup util_delay
+  94:/usr/lib/avr/include/util/delay.h ****     \def F_CPU
+  95:/usr/lib/avr/include/util/delay.h ****     \brief CPU frequency in Hz
+  96:/usr/lib/avr/include/util/delay.h **** 
+  97:/usr/lib/avr/include/util/delay.h ****     The macro F_CPU specifies the CPU frequency to be considered by
+  98:/usr/lib/avr/include/util/delay.h ****     the delay macros.  This macro is normally supplied by the
+  99:/usr/lib/avr/include/util/delay.h ****     environment (e.g. from within a project header, or the project's
+ 100:/usr/lib/avr/include/util/delay.h ****     Makefile).  The value 1 MHz here is only provided as a "vanilla"
+ 101:/usr/lib/avr/include/util/delay.h ****     fallback if no such user-provided definition could be found.
+ 102:/usr/lib/avr/include/util/delay.h **** 
+ 103:/usr/lib/avr/include/util/delay.h ****     In terms of the delay functions, the CPU frequency can be given as
+ 104:/usr/lib/avr/include/util/delay.h ****     a floating-point constant (e.g. 3.6864E6 for 3.6864 MHz).
+ 105:/usr/lib/avr/include/util/delay.h ****     However, the macros in <util/setbaud.h> require it to be an
+ 106:/usr/lib/avr/include/util/delay.h ****     integer value.
+ 107:/usr/lib/avr/include/util/delay.h ****  */
+ 108:/usr/lib/avr/include/util/delay.h **** # define F_CPU 1000000UL
+ 109:/usr/lib/avr/include/util/delay.h **** #endif
+ 110:/usr/lib/avr/include/util/delay.h **** 
+ 111:/usr/lib/avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+ 112:/usr/lib/avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+ 113:/usr/lib/avr/include/util/delay.h **** #endif
+ 114:/usr/lib/avr/include/util/delay.h **** 
+ 115:/usr/lib/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 116:/usr/lib/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 117:/usr/lib/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 118:/usr/lib/avr/include/util/delay.h **** #  include <math.h>
+ 119:/usr/lib/avr/include/util/delay.h **** #endif
+ 120:/usr/lib/avr/include/util/delay.h **** 
+ 121:/usr/lib/avr/include/util/delay.h **** /**
+ 122:/usr/lib/avr/include/util/delay.h ****    \ingroup util_delay
+ 123:/usr/lib/avr/include/util/delay.h **** 
+ 124:/usr/lib/avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 125:/usr/lib/avr/include/util/delay.h **** 
+ 126:/usr/lib/avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 127:/usr/lib/avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 128:/usr/lib/avr/include/util/delay.h **** 
+ 129:/usr/lib/avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 130:/usr/lib/avr/include/util/delay.h **** 
+ 131:/usr/lib/avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 132:/usr/lib/avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 133:/usr/lib/avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 134:/usr/lib/avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 135:/usr/lib/avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 136:/usr/lib/avr/include/util/delay.h **** 
+ 137:/usr/lib/avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles()
+ 138:/usr/lib/avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 139:/usr/lib/avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 140:/usr/lib/avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 141:/usr/lib/avr/include/util/delay.h **** 
+ 142:/usr/lib/avr/include/util/delay.h ****    Conversion of \c __ms into clock cycles may not always result in
+ 143:/usr/lib/avr/include/util/delay.h ****    integer.  By default, the clock cycles rounded up to next
+ 144:/usr/lib/avr/include/util/delay.h ****    integer. This ensures that the user gets at least \c __ms
+ 145:/usr/lib/avr/include/util/delay.h ****    microseconds of delay.
+ 146:/usr/lib/avr/include/util/delay.h **** 
+ 147:/usr/lib/avr/include/util/delay.h ****    Alternatively, by defining the macro \c __DELAY_ROUND_DOWN__, or
+ 148:/usr/lib/avr/include/util/delay.h ****    \c __DELAY_ROUND_CLOSEST__, before including this header file, the
+ 149:/usr/lib/avr/include/util/delay.h ****    algorithm can be made to round down, or round to closest integer,
+ 150:/usr/lib/avr/include/util/delay.h ****    respectively.
+ 151:/usr/lib/avr/include/util/delay.h **** 
+ 152:/usr/lib/avr/include/util/delay.h ****    \note
+ 153:/usr/lib/avr/include/util/delay.h **** 
+ 154:/usr/lib/avr/include/util/delay.h ****    The implementation of _delay_ms() based on
+ 155:/usr/lib/avr/include/util/delay.h ****    __builtin_avr_delay_cycles() is not backward compatible with older
+ 156:/usr/lib/avr/include/util/delay.h ****    implementations.  In order to get functionality backward compatible
+ 157:/usr/lib/avr/include/util/delay.h ****    with previous versions, the macro \c "__DELAY_BACKWARD_COMPATIBLE__"
+ 158:/usr/lib/avr/include/util/delay.h ****    must be defined before including this header file. Also, the
+ 159:/usr/lib/avr/include/util/delay.h ****    backward compatible algorithm will be chosen if the code is
+ 160:/usr/lib/avr/include/util/delay.h ****    compiled in a <em>freestanding environment</em> (GCC option
+ 161:/usr/lib/avr/include/util/delay.h ****    \c -ffreestanding), as the math functions required for rounding are
+ 162:/usr/lib/avr/include/util/delay.h ****    not available to the compiler then.
+ 163:/usr/lib/avr/include/util/delay.h **** 
+ 164:/usr/lib/avr/include/util/delay.h ****  */
+ 165:/usr/lib/avr/include/util/delay.h **** void
+ 166:/usr/lib/avr/include/util/delay.h **** _delay_ms(double __ms)
+ 167:/usr/lib/avr/include/util/delay.h **** {
+ 168:/usr/lib/avr/include/util/delay.h **** 	double __tmp ;
+ 169:/usr/lib/avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 170:/usr/lib/avr/include/util/delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 171:/usr/lib/avr/include/util/delay.h ****   __STDC_HOSTED__
+ 172:/usr/lib/avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 173:/usr/lib/avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 174:/usr/lib/avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 175:/usr/lib/avr/include/util/delay.h **** 
+ 176:/usr/lib/avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 177:/usr/lib/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 178:/usr/lib/avr/include/util/delay.h **** 
+ 179:/usr/lib/avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 180:/usr/lib/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 181:/usr/lib/avr/include/util/delay.h **** 
+ 182:/usr/lib/avr/include/util/delay.h **** 	#else
+ 183:/usr/lib/avr/include/util/delay.h **** 		//round up by default
+ 184:/usr/lib/avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 185:/usr/lib/avr/include/util/delay.h **** 	#endif
+ 186:/usr/lib/avr/include/util/delay.h **** 
+ 187:/usr/lib/avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+  60               		.loc 2 187 0
+  61 0036 4FEF      		ldi r20,lo8(639999)
+  62 0038 83EC      		ldi r24,hi8(639999)
+  63 003a 99E0      		ldi r25,hlo8(639999)
+  64 003c 4150      	1:	subi r20,1
+  65 003e 8040      		sbci r24,0
+  66 0040 9040      		sbci r25,0
+  67 0042 01F4      		brne 1b
+  68 0044 00C0      		rjmp .
+  69 0046 0000      		nop
+  70               	.LVL3:
+  71               	.LBE9:
+  72               	.LBE8:
+ 109:ST7735/lib/st7735.c ****   // delay 200 ms
+ 110:ST7735/lib/st7735.c ****   _delay_ms(200);
+ 111:ST7735/lib/st7735.c ****   // Reset Low 
+ 112:ST7735/lib/st7735.c ****   CLR_BIT (*(reset->port), reset->pin);
+  73               		.loc 1 112 0
+  74 0048 A281      		ldd r26,Z+2
+  75 004a B381      		ldd r27,Z+3
+  76 004c 9C91      		ld r25,X
+  77 004e A901      		movw r20,r18
+  78 0050 0480      		ldd r0,Z+4
+  79 0052 00C0      		rjmp 2f
+  80               		1:
+  81 0054 440F      		lsl r20
+  82 0056 551F      		rol r21
+  83               		2:
+  84 0058 0A94      		dec r0
+  85 005a 02F4      		brpl 1b
+  86 005c 842F      		mov r24,r20
+  87 005e 8095      		com r24
+  88 0060 8923      		and r24,r25
+  89 0062 8C93      		st X,r24
+  90               	.LVL4:
+  91               	.LBB10:
+  92               	.LBB11:
+  93               		.loc 2 187 0
+  94 0064 4FEF      		ldi r20,lo8(639999)
+  95 0066 83EC      		ldi r24,hi8(639999)
+  96 0068 99E0      		ldi r25,hlo8(639999)
+  97 006a 4150      	1:	subi r20,1
+  98 006c 8040      		sbci r24,0
+  99 006e 9040      		sbci r25,0
+ 100 0070 01F4      		brne 1b
+ 101 0072 00C0      		rjmp .
+ 102 0074 0000      		nop
+ 103               	.LVL5:
+ 104               	.LBE11:
+ 105               	.LBE10:
+ 113:ST7735/lib/st7735.c ****   // delay 200 ms
+ 114:ST7735/lib/st7735.c ****   _delay_ms(200);
+ 115:ST7735/lib/st7735.c ****   // Reset High
+ 116:ST7735/lib/st7735.c ****   SET_BIT (*(reset->port), reset->pin);
+ 106               		.loc 1 116 0
+ 107 0076 A281      		ldd r26,Z+2
+ 108 0078 B381      		ldd r27,Z+3
+ 109 007a 8C91      		ld r24,X
+ 110 007c 0480      		ldd r0,Z+4
+ 111 007e 00C0      		rjmp 2f
+ 112               		1:
+ 113 0080 220F      		lsl r18
+ 114 0082 331F      		rol r19
+ 115               		2:
+ 116 0084 0A94      		dec r0
+ 117 0086 02F4      		brpl 1b
+ 118 0088 282B      		or r18,r24
+ 119 008a 2C93      		st X,r18
+ 120 008c 0895      		ret
+ 121               		.cfi_endproc
+ 122               	.LFE7:
+ 124               	.global	ST7735_SPI_Init
+ 126               	ST7735_SPI_Init:
+ 127               	.LFB8:
+ 117:ST7735/lib/st7735.c **** }
+ 118:ST7735/lib/st7735.c **** 
+ 119:ST7735/lib/st7735.c **** /**
+ 120:ST7735/lib/st7735.c ****  * @desc    Init SPI
+ 121:ST7735/lib/st7735.c ****  *
+ 122:ST7735/lib/st7735.c ****  * @param   void
+ 123:ST7735/lib/st7735.c ****  *
+ 124:ST7735/lib/st7735.c ****  * @return  void
+ 125:ST7735/lib/st7735.c ****  */
+ 126:ST7735/lib/st7735.c **** void ST7735_SPI_Init (void)
+ 127:ST7735/lib/st7735.c **** {
+ 128               		.loc 1 127 0
+ 129               		.cfi_startproc
+ 130               	/* prologue: function */
+ 131               	/* frame size = 0 */
+ 132               	/* stack size = 0 */
+ 133               	.L__stack_usage = 0
+ 128:ST7735/lib/st7735.c ****   // Output: SCK, MOSI 
+ 129:ST7735/lib/st7735.c ****   SET_BIT (DDR, ST7735_SCK);
+ 134               		.loc 1 129 0
+ 135 008e 259A      		sbi 0x4,5
+ 130:ST7735/lib/st7735.c ****   SET_BIT (DDR, ST7735_MOSI);
+ 136               		.loc 1 130 0
+ 137 0090 239A      		sbi 0x4,3
+ 131:ST7735/lib/st7735.c **** /*
+ 132:ST7735/lib/st7735.c ****   // Input: MISO with pullup
+ 133:ST7735/lib/st7735.c ****   CLR_BIT (DDR, ST7735_MOSI);
+ 134:ST7735/lib/st7735.c ****   PORT_BIT (PORT, ST7735_MOSI);
+ 135:ST7735/lib/st7735.c **** */
+ 136:ST7735/lib/st7735.c ****   // SPE  - SPI Enale
+ 137:ST7735/lib/st7735.c ****   // MSTR - Master device
+ 138:ST7735/lib/st7735.c ****   SET_BIT (SPCR, SPE);
+ 138               		.loc 1 138 0
+ 139 0092 8CB5      		in r24,0x2c
+ 140 0094 8064      		ori r24,lo8(64)
+ 141 0096 8CBD      		out 0x2c,r24
+ 139:ST7735/lib/st7735.c ****   SET_BIT (SPCR, MSTR);
+ 142               		.loc 1 139 0
+ 143 0098 8CB5      		in r24,0x2c
+ 144 009a 8061      		ori r24,lo8(16)
+ 145 009c 8CBD      		out 0x2c,r24
+ 140:ST7735/lib/st7735.c ****   // SPI2X - Prescaler fclk/2 = 8MHz
+ 141:ST7735/lib/st7735.c ****   SET_BIT (SPSR, SPI2X);
+ 146               		.loc 1 141 0
+ 147 009e 8DB5      		in r24,0x2d
+ 148 00a0 8160      		ori r24,lo8(1)
+ 149 00a2 8DBD      		out 0x2d,r24
+ 150 00a4 0895      		ret
+ 151               		.cfi_endproc
+ 152               	.LFE8:
+ 154               	.global	ST7735_Pins_Init
+ 156               	ST7735_Pins_Init:
+ 157               	.LFB9:
+ 142:ST7735/lib/st7735.c **** }
+ 143:ST7735/lib/st7735.c **** 
+ 144:ST7735/lib/st7735.c **** /**
+ 145:ST7735/lib/st7735.c ****  * @desc    Init Pins
+ 146:ST7735/lib/st7735.c ****  *
+ 147:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 148:ST7735/lib/st7735.c ****  *
+ 149:ST7735/lib/st7735.c ****  * @return  void
+ 150:ST7735/lib/st7735.c ****  */
+ 151:ST7735/lib/st7735.c **** void ST7735_Pins_Init (struct st7735 * lcd)
+ 152:ST7735/lib/st7735.c **** {
+ 158               		.loc 1 152 0
+ 159               		.cfi_startproc
+ 160               	.LVL6:
+ 161 00a6 CF93      		push r28
+ 162               	.LCFI0:
+ 163               		.cfi_def_cfa_offset 3
+ 164               		.cfi_offset 28, -2
+ 165 00a8 DF93      		push r29
+ 166               	.LCFI1:
+ 167               		.cfi_def_cfa_offset 4
+ 168               		.cfi_offset 29, -3
+ 169               	/* prologue: function */
+ 170               	/* frame size = 0 */
+ 171               	/* stack size = 2 */
+ 172               	.L__stack_usage = 2
+ 173 00aa FC01      		movw r30,r24
+ 153:ST7735/lib/st7735.c ****   // DDR
+ 154:ST7735/lib/st7735.c ****   // --------------------------------------
+ 155:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->cs->ddr), lcd->cs->pin);
+ 174               		.loc 1 155 0
+ 175 00ac C081      		ld r28,Z
+ 176 00ae D181      		ldd r29,Z+1
+ 177 00b0 A881      		ld r26,Y
+ 178 00b2 B981      		ldd r27,Y+1
+ 179 00b4 4C91      		ld r20,X
+ 180 00b6 21E0      		ldi r18,lo8(1)
+ 181 00b8 30E0      		ldi r19,0
+ 182 00ba C901      		movw r24,r18
+ 183               	.LVL7:
+ 184 00bc 0C80      		ldd r0,Y+4
+ 185 00be 00C0      		rjmp 2f
+ 186               		1:
+ 187 00c0 880F      		lsl r24
+ 188 00c2 991F      		rol r25
+ 189               		2:
+ 190 00c4 0A94      		dec r0
+ 191 00c6 02F4      		brpl 1b
+ 192 00c8 842B      		or r24,r20
+ 193 00ca 8C93      		st X,r24
+ 156:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->bl->ddr), lcd->bl->pin);
+ 194               		.loc 1 156 0
+ 195 00cc C281      		ldd r28,Z+2
+ 196 00ce D381      		ldd r29,Z+3
+ 197 00d0 A881      		ld r26,Y
+ 198 00d2 B981      		ldd r27,Y+1
+ 199 00d4 4C91      		ld r20,X
+ 200 00d6 C901      		movw r24,r18
+ 201 00d8 0C80      		ldd r0,Y+4
+ 202 00da 00C0      		rjmp 2f
+ 203               		1:
+ 204 00dc 880F      		lsl r24
+ 205 00de 991F      		rol r25
+ 206               		2:
+ 207 00e0 0A94      		dec r0
+ 208 00e2 02F4      		brpl 1b
+ 209 00e4 842B      		or r24,r20
+ 210 00e6 8C93      		st X,r24
+ 157:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->dc->ddr), lcd->dc->pin);
+ 211               		.loc 1 157 0
+ 212 00e8 C481      		ldd r28,Z+4
+ 213 00ea D581      		ldd r29,Z+5
+ 214 00ec A881      		ld r26,Y
+ 215 00ee B981      		ldd r27,Y+1
+ 216 00f0 4C91      		ld r20,X
+ 217 00f2 C901      		movw r24,r18
+ 218 00f4 0C80      		ldd r0,Y+4
+ 219 00f6 00C0      		rjmp 2f
+ 220               		1:
+ 221 00f8 880F      		lsl r24
+ 222 00fa 991F      		rol r25
+ 223               		2:
+ 224 00fc 0A94      		dec r0
+ 225 00fe 02F4      		brpl 1b
+ 226 0100 842B      		or r24,r20
+ 227 0102 8C93      		st X,r24
+ 158:ST7735/lib/st7735.c ****   // PORT
+ 159:ST7735/lib/st7735.c ****   // --------------------------------------
+ 160:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->cs->port), lcd->cs->pin);   // Chip Select H
+ 228               		.loc 1 160 0
+ 229 0104 C081      		ld r28,Z
+ 230 0106 D181      		ldd r29,Z+1
+ 231 0108 AA81      		ldd r26,Y+2
+ 232 010a BB81      		ldd r27,Y+3
+ 233 010c 4C91      		ld r20,X
+ 234 010e C901      		movw r24,r18
+ 235 0110 0C80      		ldd r0,Y+4
+ 236 0112 00C0      		rjmp 2f
+ 237               		1:
+ 238 0114 880F      		lsl r24
+ 239 0116 991F      		rol r25
+ 240               		2:
+ 241 0118 0A94      		dec r0
+ 242 011a 02F4      		brpl 1b
+ 243 011c 842B      		or r24,r20
+ 244 011e 8C93      		st X,r24
+ 161:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->bl->port), lcd->bl->pin);   // BackLigt ON
+ 245               		.loc 1 161 0
+ 246 0120 A281      		ldd r26,Z+2
+ 247 0122 B381      		ldd r27,Z+3
+ 248 0124 1296      		adiw r26,2
+ 249 0126 ED91      		ld r30,X+
+ 250 0128 FC91      		ld r31,X
+ 251 012a 1397      		sbiw r26,2+1
+ 252               	.LVL8:
+ 253 012c 8081      		ld r24,Z
+ 254 012e 1496      		adiw r26,4
+ 255 0130 0C90      		ld r0,X
+ 256 0132 00C0      		rjmp 2f
+ 257               		1:
+ 258 0134 220F      		lsl r18
+ 259 0136 331F      		rol r19
+ 260               		2:
+ 261 0138 0A94      		dec r0
+ 262 013a 02F4      		brpl 1b
+ 263 013c 282B      		or r18,r24
+ 264 013e 2083      		st Z,r18
+ 265               	/* epilogue start */
+ 162:ST7735/lib/st7735.c **** }
+ 266               		.loc 1 162 0
+ 267 0140 DF91      		pop r29
+ 268 0142 CF91      		pop r28
+ 269 0144 0895      		ret
+ 270               		.cfi_endproc
+ 271               	.LFE9:
+ 273               	.global	ST7735_CommandSend
+ 275               	ST7735_CommandSend:
+ 276               	.LFB12:
+ 163:ST7735/lib/st7735.c **** 
+ 164:ST7735/lib/st7735.c **** /**
+ 165:ST7735/lib/st7735.c ****  * @desc    Init st7735 driver
+ 166:ST7735/lib/st7735.c ****  *
+ 167:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 168:ST7735/lib/st7735.c ****  *
+ 169:ST7735/lib/st7735.c ****  * @return  void
+ 170:ST7735/lib/st7735.c ****  */
+ 171:ST7735/lib/st7735.c **** void ST7735_Init (struct st7735 * lcd)
+ 172:ST7735/lib/st7735.c **** {
+ 173:ST7735/lib/st7735.c ****   // init pins
+ 174:ST7735/lib/st7735.c ****   ST7735_Pins_Init (lcd);
+ 175:ST7735/lib/st7735.c ****   // init SPI
+ 176:ST7735/lib/st7735.c ****   ST7735_SPI_Init ();
+ 177:ST7735/lib/st7735.c ****   // hardware reset
+ 178:ST7735/lib/st7735.c ****   ST7735_Reset (lcd->rs);
+ 179:ST7735/lib/st7735.c ****   // load list of commands
+ 180:ST7735/lib/st7735.c ****   ST7735_Commands (lcd, INIT_ST7735B);
+ 181:ST7735/lib/st7735.c **** }
+ 182:ST7735/lib/st7735.c **** 
+ 183:ST7735/lib/st7735.c **** /**
+ 184:ST7735/lib/st7735.c ****  * @desc    Send list commands
+ 185:ST7735/lib/st7735.c ****  *
+ 186:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 187:ST7735/lib/st7735.c ****  * @param   const uint8_t *
+ 188:ST7735/lib/st7735.c ****  *
+ 189:ST7735/lib/st7735.c ****  * @return  void
+ 190:ST7735/lib/st7735.c ****  */
+ 191:ST7735/lib/st7735.c **** void ST7735_Commands (struct st7735 * lcd, const uint8_t * initializers)
+ 192:ST7735/lib/st7735.c **** {
+ 193:ST7735/lib/st7735.c ****   uint8_t args;
+ 194:ST7735/lib/st7735.c ****   uint8_t cmnd;
+ 195:ST7735/lib/st7735.c ****   uint8_t time;
+ 196:ST7735/lib/st7735.c ****   uint8_t loop = pgm_read_byte (initializers++);
+ 197:ST7735/lib/st7735.c **** 
+ 198:ST7735/lib/st7735.c ****   // loop through whole initializer list
+ 199:ST7735/lib/st7735.c ****   while (loop--) {
+ 200:ST7735/lib/st7735.c **** 
+ 201:ST7735/lib/st7735.c ****     // 1st arg - number of command arguments
+ 202:ST7735/lib/st7735.c ****     args = pgm_read_byte (initializers++);
+ 203:ST7735/lib/st7735.c ****     // 2nd arg - delay time
+ 204:ST7735/lib/st7735.c ****     time = pgm_read_byte (initializers++);
+ 205:ST7735/lib/st7735.c ****     // 3th arg - command
+ 206:ST7735/lib/st7735.c ****     cmnd = pgm_read_byte (initializers++);
+ 207:ST7735/lib/st7735.c **** 
+ 208:ST7735/lib/st7735.c ****     // send command
+ 209:ST7735/lib/st7735.c ****     ST7735_CommandSend (lcd, cmnd);
+ 210:ST7735/lib/st7735.c ****     // send arguments
+ 211:ST7735/lib/st7735.c ****     while (args--) {
+ 212:ST7735/lib/st7735.c ****       // send argument
+ 213:ST7735/lib/st7735.c ****       ST7735_Data8BitsSend (lcd, pgm_read_byte (initializers++));
+ 214:ST7735/lib/st7735.c ****     }
+ 215:ST7735/lib/st7735.c ****     // delay
+ 216:ST7735/lib/st7735.c ****     ST7735_DelayMs (time);
+ 217:ST7735/lib/st7735.c ****   }
+ 218:ST7735/lib/st7735.c **** }
+ 219:ST7735/lib/st7735.c **** 
+ 220:ST7735/lib/st7735.c **** /**
+ 221:ST7735/lib/st7735.c ****  * @desc    Command send
+ 222:ST7735/lib/st7735.c ****  *
+ 223:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 224:ST7735/lib/st7735.c ****  * @param   uint8_t
+ 225:ST7735/lib/st7735.c ****  *
+ 226:ST7735/lib/st7735.c ****  * @return void
+ 227:ST7735/lib/st7735.c ****  */
+ 228:ST7735/lib/st7735.c **** uint8_t ST7735_CommandSend (struct st7735 * lcd, uint8_t data)
+ 229:ST7735/lib/st7735.c **** {
+ 277               		.loc 1 229 0
+ 278               		.cfi_startproc
+ 279               	.LVL9:
+ 280 0146 CF93      		push r28
+ 281               	.LCFI2:
+ 282               		.cfi_def_cfa_offset 3
+ 283               		.cfi_offset 28, -2
+ 284 0148 DF93      		push r29
+ 285               	.LCFI3:
+ 286               		.cfi_def_cfa_offset 4
+ 287               		.cfi_offset 29, -3
+ 288               	/* prologue: function */
+ 289               	/* frame size = 0 */
+ 290               	/* stack size = 2 */
+ 291               	.L__stack_usage = 2
+ 292 014a FC01      		movw r30,r24
+ 230:ST7735/lib/st7735.c ****   // chip enable - active low
+ 231:ST7735/lib/st7735.c ****   CLR_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 293               		.loc 1 231 0
+ 294 014c C081      		ld r28,Z
+ 295 014e D181      		ldd r29,Z+1
+ 296 0150 AA81      		ldd r26,Y+2
+ 297 0152 BB81      		ldd r27,Y+3
+ 298 0154 9C91      		ld r25,X
+ 299 0156 21E0      		ldi r18,lo8(1)
+ 300 0158 30E0      		ldi r19,0
+ 301 015a A901      		movw r20,r18
+ 302 015c 0C80      		ldd r0,Y+4
+ 303 015e 00C0      		rjmp 2f
+ 304               		1:
+ 305 0160 440F      		lsl r20
+ 306 0162 551F      		rol r21
+ 307               		2:
+ 308 0164 0A94      		dec r0
+ 309 0166 02F4      		brpl 1b
+ 310 0168 842F      		mov r24,r20
+ 311               	.LVL10:
+ 312 016a 8095      		com r24
+ 313 016c 8923      		and r24,r25
+ 314 016e 8C93      		st X,r24
+ 232:ST7735/lib/st7735.c ****   // command (active low)
+ 233:ST7735/lib/st7735.c ****   CLR_BIT (*(lcd->dc->port), lcd->dc->pin);
+ 315               		.loc 1 233 0
+ 316 0170 C481      		ldd r28,Z+4
+ 317 0172 D581      		ldd r29,Z+5
+ 318 0174 AA81      		ldd r26,Y+2
+ 319 0176 BB81      		ldd r27,Y+3
+ 320 0178 8C91      		ld r24,X
+ 321 017a 0C80      		ldd r0,Y+4
+ 322 017c 00C0      		rjmp 2f
+ 323               		1:
+ 324 017e 220F      		lsl r18
+ 325 0180 331F      		rol r19
+ 326               		2:
+ 327 0182 0A94      		dec r0
+ 328 0184 02F4      		brpl 1b
+ 329 0186 2095      		com r18
+ 330 0188 2823      		and r18,r24
+ 331 018a 2C93      		st X,r18
+ 234:ST7735/lib/st7735.c ****   // transmitting data
+ 235:ST7735/lib/st7735.c ****   SPDR = data;
+ 332               		.loc 1 235 0
+ 333 018c 6EBD      		out 0x2e,r22
+ 334               	.L5:
+ 236:ST7735/lib/st7735.c ****   // wait till data transmit
+ 237:ST7735/lib/st7735.c ****   WAIT_UNTIL_BIT_IS_SET (SPSR, SPIF);
+ 335               		.loc 1 237 0 discriminator 1
+ 336 018e 0DB4      		in __tmp_reg__,0x2d
+ 337 0190 07FE      		sbrs __tmp_reg__,7
+ 338 0192 00C0      		rjmp .L5
+ 238:ST7735/lib/st7735.c ****   // chip disable - idle high
+ 239:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 339               		.loc 1 239 0
+ 340 0194 A081      		ld r26,Z
+ 341 0196 B181      		ldd r27,Z+1
+ 342 0198 1296      		adiw r26,2
+ 343 019a ED91      		ld r30,X+
+ 344 019c FC91      		ld r31,X
+ 345 019e 1397      		sbiw r26,2+1
+ 346               	.LVL11:
+ 347 01a0 2081      		ld r18,Z
+ 348 01a2 81E0      		ldi r24,lo8(1)
+ 349 01a4 90E0      		ldi r25,0
+ 350 01a6 1496      		adiw r26,4
+ 351 01a8 0C90      		ld r0,X
+ 352 01aa 00C0      		rjmp 2f
+ 353               		1:
+ 354 01ac 880F      		lsl r24
+ 355 01ae 991F      		rol r25
+ 356               		2:
+ 357 01b0 0A94      		dec r0
+ 358 01b2 02F4      		brpl 1b
+ 359 01b4 822B      		or r24,r18
+ 360 01b6 8083      		st Z,r24
+ 240:ST7735/lib/st7735.c ****   // return received data
+ 241:ST7735/lib/st7735.c ****   return SPDR;
+ 361               		.loc 1 241 0
+ 362 01b8 8EB5      		in r24,0x2e
+ 363               	/* epilogue start */
+ 242:ST7735/lib/st7735.c **** }
+ 364               		.loc 1 242 0
+ 365 01ba DF91      		pop r29
+ 366 01bc CF91      		pop r28
+ 367 01be 0895      		ret
+ 368               		.cfi_endproc
+ 369               	.LFE12:
+ 371               	.global	ST7735_Data8BitsSend
+ 373               	ST7735_Data8BitsSend:
+ 374               	.LFB13:
+ 243:ST7735/lib/st7735.c **** 
+ 244:ST7735/lib/st7735.c **** /**
+ 245:ST7735/lib/st7735.c ****  * @desc    8bits data send
+ 246:ST7735/lib/st7735.c ****  *
+ 247:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 248:ST7735/lib/st7735.c ****  * @param   uint8_t
+ 249:ST7735/lib/st7735.c ****  *
+ 250:ST7735/lib/st7735.c ****  * @return  void
+ 251:ST7735/lib/st7735.c ****  */
+ 252:ST7735/lib/st7735.c **** uint8_t ST7735_Data8BitsSend (struct st7735 * lcd, uint8_t data)
+ 253:ST7735/lib/st7735.c **** {
+ 375               		.loc 1 253 0
+ 376               		.cfi_startproc
+ 377               	.LVL12:
+ 378 01c0 CF93      		push r28
+ 379               	.LCFI4:
+ 380               		.cfi_def_cfa_offset 3
+ 381               		.cfi_offset 28, -2
+ 382 01c2 DF93      		push r29
+ 383               	.LCFI5:
+ 384               		.cfi_def_cfa_offset 4
+ 385               		.cfi_offset 29, -3
+ 386               	/* prologue: function */
+ 387               	/* frame size = 0 */
+ 388               	/* stack size = 2 */
+ 389               	.L__stack_usage = 2
+ 390 01c4 FC01      		movw r30,r24
+ 254:ST7735/lib/st7735.c ****   // chip enable - active low
+ 255:ST7735/lib/st7735.c ****   CLR_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 391               		.loc 1 255 0
+ 392 01c6 C081      		ld r28,Z
+ 393 01c8 D181      		ldd r29,Z+1
+ 394 01ca AA81      		ldd r26,Y+2
+ 395 01cc BB81      		ldd r27,Y+3
+ 396 01ce 9C91      		ld r25,X
+ 397 01d0 21E0      		ldi r18,lo8(1)
+ 398 01d2 30E0      		ldi r19,0
+ 399 01d4 A901      		movw r20,r18
+ 400 01d6 0C80      		ldd r0,Y+4
+ 401 01d8 00C0      		rjmp 2f
+ 402               		1:
+ 403 01da 440F      		lsl r20
+ 404 01dc 551F      		rol r21
+ 405               		2:
+ 406 01de 0A94      		dec r0
+ 407 01e0 02F4      		brpl 1b
+ 408 01e2 842F      		mov r24,r20
+ 409               	.LVL13:
+ 410 01e4 8095      		com r24
+ 411 01e6 8923      		and r24,r25
+ 412 01e8 8C93      		st X,r24
+ 256:ST7735/lib/st7735.c ****   // data (active high)
+ 257:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->dc->port), lcd->dc->pin);
+ 413               		.loc 1 257 0
+ 414 01ea C481      		ldd r28,Z+4
+ 415 01ec D581      		ldd r29,Z+5
+ 416 01ee AA81      		ldd r26,Y+2
+ 417 01f0 BB81      		ldd r27,Y+3
+ 418 01f2 8C91      		ld r24,X
+ 419 01f4 0C80      		ldd r0,Y+4
+ 420 01f6 00C0      		rjmp 2f
+ 421               		1:
+ 422 01f8 220F      		lsl r18
+ 423 01fa 331F      		rol r19
+ 424               		2:
+ 425 01fc 0A94      		dec r0
+ 426 01fe 02F4      		brpl 1b
+ 427 0200 282B      		or r18,r24
+ 428 0202 2C93      		st X,r18
+ 258:ST7735/lib/st7735.c ****   // transmitting data
+ 259:ST7735/lib/st7735.c ****   SPDR = data;
+ 429               		.loc 1 259 0
+ 430 0204 6EBD      		out 0x2e,r22
+ 431               	.L9:
+ 260:ST7735/lib/st7735.c ****   // wait till data transmit
+ 261:ST7735/lib/st7735.c ****   WAIT_UNTIL_BIT_IS_SET (SPSR, SPIF);
+ 432               		.loc 1 261 0 discriminator 1
+ 433 0206 0DB4      		in __tmp_reg__,0x2d
+ 434 0208 07FE      		sbrs __tmp_reg__,7
+ 435 020a 00C0      		rjmp .L9
+ 262:ST7735/lib/st7735.c ****   // chip disable - idle high
+ 263:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 436               		.loc 1 263 0
+ 437 020c A081      		ld r26,Z
+ 438 020e B181      		ldd r27,Z+1
+ 439 0210 1296      		adiw r26,2
+ 440 0212 ED91      		ld r30,X+
+ 441 0214 FC91      		ld r31,X
+ 442 0216 1397      		sbiw r26,2+1
+ 443               	.LVL14:
+ 444 0218 2081      		ld r18,Z
+ 445 021a 81E0      		ldi r24,lo8(1)
+ 446 021c 90E0      		ldi r25,0
+ 447 021e 1496      		adiw r26,4
+ 448 0220 0C90      		ld r0,X
+ 449 0222 00C0      		rjmp 2f
+ 450               		1:
+ 451 0224 880F      		lsl r24
+ 452 0226 991F      		rol r25
+ 453               		2:
+ 454 0228 0A94      		dec r0
+ 455 022a 02F4      		brpl 1b
+ 456 022c 822B      		or r24,r18
+ 457 022e 8083      		st Z,r24
+ 264:ST7735/lib/st7735.c ****   // return received data
+ 265:ST7735/lib/st7735.c ****   return SPDR;
+ 458               		.loc 1 265 0
+ 459 0230 8EB5      		in r24,0x2e
+ 460               	/* epilogue start */
+ 266:ST7735/lib/st7735.c **** }
+ 461               		.loc 1 266 0
+ 462 0232 DF91      		pop r29
+ 463 0234 CF91      		pop r28
+ 464 0236 0895      		ret
+ 465               		.cfi_endproc
+ 466               	.LFE13:
+ 468               	.global	ST7735_Data16BitsSend
+ 470               	ST7735_Data16BitsSend:
+ 471               	.LFB14:
+ 267:ST7735/lib/st7735.c **** 
+ 268:ST7735/lib/st7735.c **** /**
+ 269:ST7735/lib/st7735.c ****  * @desc    16bits data send
+ 270:ST7735/lib/st7735.c ****  *
+ 271:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 272:ST7735/lib/st7735.c ****  * @param   uint16_t
+ 273:ST7735/lib/st7735.c ****  *
+ 274:ST7735/lib/st7735.c ****  * @return  void
+ 275:ST7735/lib/st7735.c ****  */
+ 276:ST7735/lib/st7735.c **** uint8_t ST7735_Data16BitsSend (struct st7735 * lcd, uint16_t data)
+ 277:ST7735/lib/st7735.c **** {
+ 472               		.loc 1 277 0
+ 473               		.cfi_startproc
+ 474               	.LVL15:
+ 475 0238 CF93      		push r28
+ 476               	.LCFI6:
+ 477               		.cfi_def_cfa_offset 3
+ 478               		.cfi_offset 28, -2
+ 479 023a DF93      		push r29
+ 480               	.LCFI7:
+ 481               		.cfi_def_cfa_offset 4
+ 482               		.cfi_offset 29, -3
+ 483               	/* prologue: function */
+ 484               	/* frame size = 0 */
+ 485               	/* stack size = 2 */
+ 486               	.L__stack_usage = 2
+ 487 023c FC01      		movw r30,r24
+ 278:ST7735/lib/st7735.c ****   // chip enable - active low
+ 279:ST7735/lib/st7735.c ****   CLR_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 488               		.loc 1 279 0
+ 489 023e C081      		ld r28,Z
+ 490 0240 D181      		ldd r29,Z+1
+ 491 0242 AA81      		ldd r26,Y+2
+ 492 0244 BB81      		ldd r27,Y+3
+ 493 0246 9C91      		ld r25,X
+ 494 0248 21E0      		ldi r18,lo8(1)
+ 495 024a 30E0      		ldi r19,0
+ 496 024c A901      		movw r20,r18
+ 497 024e 0C80      		ldd r0,Y+4
+ 498 0250 00C0      		rjmp 2f
+ 499               		1:
+ 500 0252 440F      		lsl r20
+ 501 0254 551F      		rol r21
+ 502               		2:
+ 503 0256 0A94      		dec r0
+ 504 0258 02F4      		brpl 1b
+ 505 025a 842F      		mov r24,r20
+ 506               	.LVL16:
+ 507 025c 8095      		com r24
+ 508 025e 8923      		and r24,r25
+ 509 0260 8C93      		st X,r24
+ 280:ST7735/lib/st7735.c ****   // data (active high)
+ 281:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->dc->port), lcd->dc->pin);
+ 510               		.loc 1 281 0
+ 511 0262 C481      		ldd r28,Z+4
+ 512 0264 D581      		ldd r29,Z+5
+ 513 0266 AA81      		ldd r26,Y+2
+ 514 0268 BB81      		ldd r27,Y+3
+ 515 026a 8C91      		ld r24,X
+ 516 026c 0C80      		ldd r0,Y+4
+ 517 026e 00C0      		rjmp 2f
+ 518               		1:
+ 519 0270 220F      		lsl r18
+ 520 0272 331F      		rol r19
+ 521               		2:
+ 522 0274 0A94      		dec r0
+ 523 0276 02F4      		brpl 1b
+ 524 0278 282B      		or r18,r24
+ 525 027a 2C93      		st X,r18
+ 282:ST7735/lib/st7735.c ****   // transmitting data high byte
+ 283:ST7735/lib/st7735.c ****   SPDR = (uint8_t) (data >> 8);
+ 526               		.loc 1 283 0
+ 527 027c 7EBD      		out 0x2e,r23
+ 528               	.L12:
+ 284:ST7735/lib/st7735.c ****   // wait till high byte transmit
+ 285:ST7735/lib/st7735.c ****   WAIT_UNTIL_BIT_IS_SET (SPSR, SPIF);
+ 529               		.loc 1 285 0 discriminator 1
+ 530 027e 0DB4      		in __tmp_reg__,0x2d
+ 531 0280 07FE      		sbrs __tmp_reg__,7
+ 532 0282 00C0      		rjmp .L12
+ 286:ST7735/lib/st7735.c ****   // transmitting data low byte
+ 287:ST7735/lib/st7735.c ****   SPDR = (uint8_t) (data);
+ 533               		.loc 1 287 0
+ 534 0284 6EBD      		out 0x2e,r22
+ 535               	.L13:
+ 288:ST7735/lib/st7735.c ****   // wait till low byte transmit
+ 289:ST7735/lib/st7735.c ****   WAIT_UNTIL_BIT_IS_SET (SPSR, SPIF);
+ 536               		.loc 1 289 0 discriminator 1
+ 537 0286 0DB4      		in __tmp_reg__,0x2d
+ 538 0288 07FE      		sbrs __tmp_reg__,7
+ 539 028a 00C0      		rjmp .L13
+ 290:ST7735/lib/st7735.c ****   // chip disable - idle high
+ 291:ST7735/lib/st7735.c ****   SET_BIT (*(lcd->cs->port), lcd->cs->pin);
+ 540               		.loc 1 291 0
+ 541 028c A081      		ld r26,Z
+ 542 028e B181      		ldd r27,Z+1
+ 543 0290 1296      		adiw r26,2
+ 544 0292 ED91      		ld r30,X+
+ 545 0294 FC91      		ld r31,X
+ 546 0296 1397      		sbiw r26,2+1
+ 547               	.LVL17:
+ 548 0298 2081      		ld r18,Z
+ 549 029a 81E0      		ldi r24,lo8(1)
+ 550 029c 90E0      		ldi r25,0
+ 551 029e 1496      		adiw r26,4
+ 552 02a0 0C90      		ld r0,X
+ 553 02a2 00C0      		rjmp 2f
+ 554               		1:
+ 555 02a4 880F      		lsl r24
+ 556 02a6 991F      		rol r25
+ 557               		2:
+ 558 02a8 0A94      		dec r0
+ 559 02aa 02F4      		brpl 1b
+ 560 02ac 822B      		or r24,r18
+ 561 02ae 8083      		st Z,r24
+ 292:ST7735/lib/st7735.c ****   // return received data
+ 293:ST7735/lib/st7735.c ****   return SPDR;
+ 562               		.loc 1 293 0
+ 563 02b0 8EB5      		in r24,0x2e
+ 564               	/* epilogue start */
+ 294:ST7735/lib/st7735.c **** }
+ 565               		.loc 1 294 0
+ 566 02b2 DF91      		pop r29
+ 567 02b4 CF91      		pop r28
+ 568 02b6 0895      		ret
+ 569               		.cfi_endproc
+ 570               	.LFE14:
+ 572               	.global	ST7735_SetWindow
+ 574               	ST7735_SetWindow:
+ 575               	.LFB15:
+ 295:ST7735/lib/st7735.c **** 
+ 296:ST7735/lib/st7735.c **** /**
+ 297:ST7735/lib/st7735.c ****  * @desc    Set window
+ 298:ST7735/lib/st7735.c ****  *
+ 299:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 300:ST7735/lib/st7735.c ****  * @param   uint8_t x - start position
+ 301:ST7735/lib/st7735.c ****  * @param   uint8_t x - end position
+ 302:ST7735/lib/st7735.c ****  * @param   uint8_t y - start position
+ 303:ST7735/lib/st7735.c ****  * @param   uint8_t y - end position
+ 304:ST7735/lib/st7735.c ****  *
+ 305:ST7735/lib/st7735.c ****  * @return  uint8_t
+ 306:ST7735/lib/st7735.c ****  */
+ 307:ST7735/lib/st7735.c **** uint8_t ST7735_SetWindow (struct st7735 * lcd, uint8_t x0, uint8_t x1, uint8_t y0, uint8_t y1)
+ 308:ST7735/lib/st7735.c **** {
+ 576               		.loc 1 308 0
+ 577               		.cfi_startproc
+ 578               	.LVL18:
+ 579 02b8 EF92      		push r14
+ 580               	.LCFI8:
+ 581               		.cfi_def_cfa_offset 3
+ 582               		.cfi_offset 14, -2
+ 583 02ba FF92      		push r15
+ 584               	.LCFI9:
+ 585               		.cfi_def_cfa_offset 4
+ 586               		.cfi_offset 15, -3
+ 587 02bc 0F93      		push r16
+ 588               	.LCFI10:
+ 589               		.cfi_def_cfa_offset 5
+ 590               		.cfi_offset 16, -4
+ 591 02be 1F93      		push r17
+ 592               	.LCFI11:
+ 593               		.cfi_def_cfa_offset 6
+ 594               		.cfi_offset 17, -5
+ 595 02c0 CF93      		push r28
+ 596               	.LCFI12:
+ 597               		.cfi_def_cfa_offset 7
+ 598               		.cfi_offset 28, -6
+ 599 02c2 DF93      		push r29
+ 600               	.LCFI13:
+ 601               		.cfi_def_cfa_offset 8
+ 602               		.cfi_offset 29, -7
+ 603               	/* prologue: function */
+ 604               	/* frame size = 0 */
+ 605               	/* stack size = 6 */
+ 606               	.L__stack_usage = 6
+ 309:ST7735/lib/st7735.c ****   // check if coordinates is out of range
+ 310:ST7735/lib/st7735.c ****   if ((x0 > x1)     ||
+ 607               		.loc 1 310 0
+ 608 02c4 4617      		cp r20,r22
+ 609 02c6 00F0      		brlo .L21
+ 610               		.loc 1 310 0 is_stmt 0 discriminator 1
+ 611 02c8 47FD      		sbrc r20,7
+ 612 02ca 00C0      		rjmp .L21
+ 311:ST7735/lib/st7735.c ****       (x1 > SIZE_X) ||
+ 613               		.loc 1 311 0 is_stmt 1
+ 614 02cc 0217      		cp r16,r18
+ 615 02ce 00F0      		brlo .L21
+ 312:ST7735/lib/st7735.c ****       (y0 > y1)     ||
+ 616               		.loc 1 312 0
+ 617 02d0 07FD      		sbrc r16,7
+ 618 02d2 00C0      		rjmp .L21
+ 619 02d4 F22E      		mov r15,r18
+ 620 02d6 142F      		mov r17,r20
+ 621 02d8 E62E      		mov r14,r22
+ 622 02da EC01      		movw r28,r24
+ 623               	.LVL19:
+ 624               	.LBB14:
+ 625               	.LBB15:
+ 313:ST7735/lib/st7735.c ****       (y1 > SIZE_Y)) { 
+ 314:ST7735/lib/st7735.c ****     // out of range
+ 315:ST7735/lib/st7735.c ****     return ST7735_ERROR;
+ 316:ST7735/lib/st7735.c ****   }  
+ 317:ST7735/lib/st7735.c ****   // column address set
+ 318:ST7735/lib/st7735.c ****   ST7735_CommandSend (lcd, CASET);
+ 626               		.loc 1 318 0
+ 627 02dc 6AE2      		ldi r22,lo8(42)
+ 628               	.LVL20:
+ 629 02de 0E94 0000 		call ST7735_CommandSend
+ 630               	.LVL21:
+ 319:ST7735/lib/st7735.c ****   // send start x position
+ 320:ST7735/lib/st7735.c ****   ST7735_Data16BitsSend (lcd, 0x0000 | x0);
+ 631               		.loc 1 320 0
+ 632 02e2 6E2D      		mov r22,r14
+ 633 02e4 70E0      		ldi r23,0
+ 634 02e6 CE01      		movw r24,r28
+ 635 02e8 0E94 0000 		call ST7735_Data16BitsSend
+ 636               	.LVL22:
+ 321:ST7735/lib/st7735.c ****   // send end x position
+ 322:ST7735/lib/st7735.c ****   ST7735_Data16BitsSend (lcd, 0x0000 | x1);
+ 637               		.loc 1 322 0
+ 638 02ec 612F      		mov r22,r17
+ 639 02ee 70E0      		ldi r23,0
+ 640 02f0 CE01      		movw r24,r28
+ 641 02f2 0E94 0000 		call ST7735_Data16BitsSend
+ 642               	.LVL23:
+ 323:ST7735/lib/st7735.c **** 
+ 324:ST7735/lib/st7735.c ****   // row address set
+ 325:ST7735/lib/st7735.c ****   ST7735_CommandSend (lcd, RASET);
+ 643               		.loc 1 325 0
+ 644 02f6 6BE2      		ldi r22,lo8(43)
+ 645 02f8 CE01      		movw r24,r28
+ 646 02fa 0E94 0000 		call ST7735_CommandSend
+ 647               	.LVL24:
+ 326:ST7735/lib/st7735.c ****   // send start y position
+ 327:ST7735/lib/st7735.c ****   ST7735_Data16BitsSend (lcd, 0x0000 | y0);
+ 648               		.loc 1 327 0
+ 649 02fe 6F2D      		mov r22,r15
+ 650 0300 70E0      		ldi r23,0
+ 651 0302 CE01      		movw r24,r28
+ 652 0304 0E94 0000 		call ST7735_Data16BitsSend
+ 653               	.LVL25:
+ 328:ST7735/lib/st7735.c ****   // send end y position
+ 329:ST7735/lib/st7735.c ****   ST7735_Data16BitsSend (lcd, 0x0000 | y1);
+ 654               		.loc 1 329 0
+ 655 0308 602F      		mov r22,r16
+ 656 030a 70E0      		ldi r23,0
+ 657 030c CE01      		movw r24,r28
+ 658 030e 0E94 0000 		call ST7735_Data16BitsSend
+ 659               	.LVL26:
+ 660 0312 80E0      		ldi r24,0
+ 661 0314 00C0      		rjmp .L17
+ 662               	.LVL27:
+ 663               	.L21:
+ 664               	.LBE15:
+ 665               	.LBE14:
+ 315:ST7735/lib/st7735.c ****   }  
+ 666               		.loc 1 315 0
+ 667 0316 81E0      		ldi r24,lo8(1)
+ 668               	.LVL28:
+ 669               	.L17:
+ 670               	/* epilogue start */
+ 330:ST7735/lib/st7735.c **** 
+ 331:ST7735/lib/st7735.c ****   // success
+ 332:ST7735/lib/st7735.c ****   return ST7735_SUCCESS;
+ 333:ST7735/lib/st7735.c **** }
+ 671               		.loc 1 333 0
+ 672 0318 DF91      		pop r29
+ 673 031a CF91      		pop r28
+ 674 031c 1F91      		pop r17
+ 675 031e 0F91      		pop r16
+ 676               	.LVL29:
+ 677 0320 FF90      		pop r15
+ 678 0322 EF90      		pop r14
+ 679 0324 0895      		ret
+ 680               		.cfi_endproc
+ 681               	.LFE15:
+ 683               	.global	ST7735_SendColor565
+ 685               	ST7735_SendColor565:
+ 686               	.LFB16:
+ 334:ST7735/lib/st7735.c **** 
+ 335:ST7735/lib/st7735.c **** /**
+ 336:ST7735/lib/st7735.c ****  * @desc    Write color pixels
+ 337:ST7735/lib/st7735.c ****  *
+ 338:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 339:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 340:ST7735/lib/st7735.c ****  * @param   uint16_t counter
+ 341:ST7735/lib/st7735.c ****  *
+ 342:ST7735/lib/st7735.c ****  * @return  void
+ 343:ST7735/lib/st7735.c ****  */
+ 344:ST7735/lib/st7735.c **** void ST7735_SendColor565 (struct st7735 * lcd, uint16_t color, uint16_t count)
+ 345:ST7735/lib/st7735.c **** {
+ 687               		.loc 1 345 0
+ 688               		.cfi_startproc
+ 689               	.LVL30:
+ 690 0326 CF92      		push r12
+ 691               	.LCFI14:
+ 692               		.cfi_def_cfa_offset 3
+ 693               		.cfi_offset 12, -2
+ 694 0328 DF92      		push r13
+ 695               	.LCFI15:
+ 696               		.cfi_def_cfa_offset 4
+ 697               		.cfi_offset 13, -3
+ 698 032a EF92      		push r14
+ 699               	.LCFI16:
+ 700               		.cfi_def_cfa_offset 5
+ 701               		.cfi_offset 14, -4
+ 702 032c FF92      		push r15
+ 703               	.LCFI17:
+ 704               		.cfi_def_cfa_offset 6
+ 705               		.cfi_offset 15, -5
+ 706 032e 0F93      		push r16
+ 707               	.LCFI18:
+ 708               		.cfi_def_cfa_offset 7
+ 709               		.cfi_offset 16, -6
+ 710 0330 1F93      		push r17
+ 711               	.LCFI19:
+ 712               		.cfi_def_cfa_offset 8
+ 713               		.cfi_offset 17, -7
+ 714 0332 CF93      		push r28
+ 715               	.LCFI20:
+ 716               		.cfi_def_cfa_offset 9
+ 717               		.cfi_offset 28, -8
+ 718 0334 DF93      		push r29
+ 719               	.LCFI21:
+ 720               		.cfi_def_cfa_offset 10
+ 721               		.cfi_offset 29, -9
+ 722               	/* prologue: function */
+ 723               	/* frame size = 0 */
+ 724               	/* stack size = 8 */
+ 725               	.L__stack_usage = 8
+ 726 0336 8C01      		movw r16,r24
+ 727 0338 7B01      		movw r14,r22
+ 728 033a 6A01      		movw r12,r20
+ 346:ST7735/lib/st7735.c ****   // access to RAM
+ 347:ST7735/lib/st7735.c ****   ST7735_CommandSend (lcd, RAMWR);
+ 729               		.loc 1 347 0
+ 730 033c 6CE2      		ldi r22,lo8(44)
+ 731               	.LVL31:
+ 732 033e 0E94 0000 		call ST7735_CommandSend
+ 733               	.LVL32:
+ 348:ST7735/lib/st7735.c ****   // counter
+ 349:ST7735/lib/st7735.c ****   while (count--) {
+ 734               		.loc 1 349 0
+ 735 0342 E601      		movw r28,r12
+ 736               	.LVL33:
+ 737               	.L23:
+ 738 0344 2097      		sbiw r28,0
+ 739 0346 01F0      		breq .L25
+ 350:ST7735/lib/st7735.c ****     // write color
+ 351:ST7735/lib/st7735.c ****     ST7735_Data16BitsSend (lcd, color);
+ 740               		.loc 1 351 0
+ 741 0348 B701      		movw r22,r14
+ 742 034a C801      		movw r24,r16
+ 743 034c 0E94 0000 		call ST7735_Data16BitsSend
+ 744               	.LVL34:
+ 745 0350 2197      		sbiw r28,1
+ 746               	.LVL35:
+ 747 0352 00C0      		rjmp .L23
+ 748               	.LVL36:
+ 749               	.L25:
+ 750               	/* epilogue start */
+ 352:ST7735/lib/st7735.c ****   }
+ 353:ST7735/lib/st7735.c **** }
+ 751               		.loc 1 353 0
+ 752 0354 DF91      		pop r29
+ 753 0356 CF91      		pop r28
+ 754               	.LVL37:
+ 755 0358 1F91      		pop r17
+ 756 035a 0F91      		pop r16
+ 757               	.LVL38:
+ 758 035c FF90      		pop r15
+ 759 035e EF90      		pop r14
+ 760               	.LVL39:
+ 761 0360 DF90      		pop r13
+ 762 0362 CF90      		pop r12
+ 763 0364 0895      		ret
+ 764               		.cfi_endproc
+ 765               	.LFE16:
+ 767               	.global	ST7735_DrawPixel
+ 769               	ST7735_DrawPixel:
+ 770               	.LFB17:
+ 354:ST7735/lib/st7735.c **** 
+ 355:ST7735/lib/st7735.c **** /**
+ 356:ST7735/lib/st7735.c ****  * @desc    Draw pixel
+ 357:ST7735/lib/st7735.c ****  *
+ 358:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 359:ST7735/lib/st7735.c ****  * @param   uint8_t x position / 0 <= cols <= MAX_X-1
+ 360:ST7735/lib/st7735.c ****  * @param   uint8_t y position / 0 <= rows <= MAX_Y-1
+ 361:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 362:ST7735/lib/st7735.c ****  *
+ 363:ST7735/lib/st7735.c ****  * @return  void
+ 364:ST7735/lib/st7735.c ****  */
+ 365:ST7735/lib/st7735.c **** void ST7735_DrawPixel (struct st7735 * lcd, uint8_t x, uint8_t y, uint16_t color)
+ 366:ST7735/lib/st7735.c **** {
+ 771               		.loc 1 366 0
+ 772               		.cfi_startproc
+ 773               	.LVL40:
+ 774 0366 EF92      		push r14
+ 775               	.LCFI22:
+ 776               		.cfi_def_cfa_offset 3
+ 777               		.cfi_offset 14, -2
+ 778 0368 FF92      		push r15
+ 779               	.LCFI23:
+ 780               		.cfi_def_cfa_offset 4
+ 781               		.cfi_offset 15, -3
+ 782 036a 0F93      		push r16
+ 783               	.LCFI24:
+ 784               		.cfi_def_cfa_offset 5
+ 785               		.cfi_offset 16, -4
+ 786 036c CF93      		push r28
+ 787               	.LCFI25:
+ 788               		.cfi_def_cfa_offset 6
+ 789               		.cfi_offset 28, -5
+ 790 036e DF93      		push r29
+ 791               	.LCFI26:
+ 792               		.cfi_def_cfa_offset 7
+ 793               		.cfi_offset 29, -6
+ 794               	/* prologue: function */
+ 795               	/* frame size = 0 */
+ 796               	/* stack size = 5 */
+ 797               	.L__stack_usage = 5
+ 798 0370 EC01      		movw r28,r24
+ 799 0372 7901      		movw r14,r18
+ 367:ST7735/lib/st7735.c ****   // set window
+ 368:ST7735/lib/st7735.c ****   ST7735_SetWindow (lcd, x, x, y, y);
+ 800               		.loc 1 368 0
+ 801 0374 042F      		mov r16,r20
+ 802 0376 242F      		mov r18,r20
+ 803               	.LVL41:
+ 804 0378 462F      		mov r20,r22
+ 805               	.LVL42:
+ 806 037a 0E94 0000 		call ST7735_SetWindow
+ 807               	.LVL43:
+ 369:ST7735/lib/st7735.c ****   // draw pixel by 565 mode
+ 370:ST7735/lib/st7735.c ****   ST7735_SendColor565 (lcd, color, 1);
+ 808               		.loc 1 370 0
+ 809 037e 41E0      		ldi r20,lo8(1)
+ 810 0380 50E0      		ldi r21,0
+ 811 0382 B701      		movw r22,r14
+ 812 0384 CE01      		movw r24,r28
+ 813               	/* epilogue start */
+ 371:ST7735/lib/st7735.c **** }
+ 814               		.loc 1 371 0
+ 815 0386 DF91      		pop r29
+ 816 0388 CF91      		pop r28
+ 817               	.LVL44:
+ 818 038a 0F91      		pop r16
+ 819               	.LVL45:
+ 820 038c FF90      		pop r15
+ 821 038e EF90      		pop r14
+ 822               	.LVL46:
+ 370:ST7735/lib/st7735.c **** }
+ 823               		.loc 1 370 0
+ 824 0390 0C94 0000 		jmp ST7735_SendColor565
+ 825               	.LVL47:
+ 826               		.cfi_endproc
+ 827               	.LFE17:
+ 829               	.global	ST7735_RAM_Content_Show
+ 831               	ST7735_RAM_Content_Show:
+ 832               	.LFB18:
+ 372:ST7735/lib/st7735.c **** 
+ 373:ST7735/lib/st7735.c **** /**
+ 374:ST7735/lib/st7735.c ****  * @desc    RAM Content Show
+ 375:ST7735/lib/st7735.c ****  *
+ 376:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 377:ST7735/lib/st7735.c ****  *
+ 378:ST7735/lib/st7735.c ****  * @return  void
+ 379:ST7735/lib/st7735.c ****  */
+ 380:ST7735/lib/st7735.c **** void ST7735_RAM_Content_Show (struct st7735 * lcd)
+ 381:ST7735/lib/st7735.c **** {
+ 833               		.loc 1 381 0
+ 834               		.cfi_startproc
+ 835               	.LVL48:
+ 836               	/* prologue: function */
+ 837               	/* frame size = 0 */
+ 838               	/* stack size = 0 */
+ 839               	.L__stack_usage = 0
+ 382:ST7735/lib/st7735.c ****   // display content on
+ 383:ST7735/lib/st7735.c ****   ST7735_CommandSend (lcd, DISPON);
+ 840               		.loc 1 383 0
+ 841 0394 69E2      		ldi r22,lo8(41)
+ 842 0396 0C94 0000 		jmp ST7735_CommandSend
+ 843               	.LVL49:
+ 844               		.cfi_endproc
+ 845               	.LFE18:
+ 847               	.global	ST7735_RAM_Content_Hide
+ 849               	ST7735_RAM_Content_Hide:
+ 850               	.LFB19:
+ 384:ST7735/lib/st7735.c **** }
+ 385:ST7735/lib/st7735.c **** 
+ 386:ST7735/lib/st7735.c **** /**
+ 387:ST7735/lib/st7735.c ****  * @desc    RAM Content Hide
+ 388:ST7735/lib/st7735.c ****  *
+ 389:ST7735/lib/st7735.c ****  * @param   struct st7735 * lcd
+ 390:ST7735/lib/st7735.c ****  *
+ 391:ST7735/lib/st7735.c ****  * @return  void
+ 392:ST7735/lib/st7735.c ****  */
+ 393:ST7735/lib/st7735.c **** void ST7735_RAM_Content_Hide (struct st7735 * lcd)
+ 394:ST7735/lib/st7735.c **** {
+ 851               		.loc 1 394 0
+ 852               		.cfi_startproc
+ 853               	.LVL50:
+ 854               	/* prologue: function */
+ 855               	/* frame size = 0 */
+ 856               	/* stack size = 0 */
+ 857               	.L__stack_usage = 0
+ 395:ST7735/lib/st7735.c ****   // display content off
+ 396:ST7735/lib/st7735.c ****   ST7735_CommandSend (lcd, DISPOFF);
+ 858               		.loc 1 396 0
+ 859 039a 68E2      		ldi r22,lo8(40)
+ 860 039c 0C94 0000 		jmp ST7735_CommandSend
+ 861               	.LVL51:
+ 862               		.cfi_endproc
+ 863               	.LFE19:
+ 865               	.global	ST7735_ClearScreen
+ 867               	ST7735_ClearScreen:
+ 868               	.LFB20:
+ 397:ST7735/lib/st7735.c **** }
+ 398:ST7735/lib/st7735.c **** 
+ 399:ST7735/lib/st7735.c **** /**
+ 400:ST7735/lib/st7735.c ****  * @desc    Clear screen
+ 401:ST7735/lib/st7735.c ****  *
+ 402:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 403:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 404:ST7735/lib/st7735.c ****  *
+ 405:ST7735/lib/st7735.c ****  * @return  void
+ 406:ST7735/lib/st7735.c ****  */
+ 407:ST7735/lib/st7735.c **** void ST7735_ClearScreen (struct st7735 * lcd, uint16_t color)
+ 408:ST7735/lib/st7735.c **** {
+ 869               		.loc 1 408 0
+ 870               		.cfi_startproc
+ 871               	.LVL52:
+ 872 03a0 EF92      		push r14
+ 873               	.LCFI27:
+ 874               		.cfi_def_cfa_offset 3
+ 875               		.cfi_offset 14, -2
+ 876 03a2 FF92      		push r15
+ 877               	.LCFI28:
+ 878               		.cfi_def_cfa_offset 4
+ 879               		.cfi_offset 15, -3
+ 880 03a4 0F93      		push r16
+ 881               	.LCFI29:
+ 882               		.cfi_def_cfa_offset 5
+ 883               		.cfi_offset 16, -4
+ 884 03a6 CF93      		push r28
+ 885               	.LCFI30:
+ 886               		.cfi_def_cfa_offset 6
+ 887               		.cfi_offset 28, -5
+ 888 03a8 DF93      		push r29
+ 889               	.LCFI31:
+ 890               		.cfi_def_cfa_offset 7
+ 891               		.cfi_offset 29, -6
+ 892               	/* prologue: function */
+ 893               	/* frame size = 0 */
+ 894               	/* stack size = 5 */
+ 895               	.L__stack_usage = 5
+ 896 03aa EC01      		movw r28,r24
+ 897 03ac 7B01      		movw r14,r22
+ 409:ST7735/lib/st7735.c ****   // set whole window
+ 410:ST7735/lib/st7735.c ****   ST7735_SetWindow (lcd, 0, SIZE_X, 0, SIZE_Y);
+ 898               		.loc 1 410 0
+ 899 03ae 0FE7      		ldi r16,lo8(127)
+ 900 03b0 20E0      		ldi r18,0
+ 901 03b2 4FE7      		ldi r20,lo8(127)
+ 902 03b4 60E0      		ldi r22,0
+ 903               	.LVL53:
+ 904 03b6 0E94 0000 		call ST7735_SetWindow
+ 905               	.LVL54:
+ 411:ST7735/lib/st7735.c ****   // draw individual pixels
+ 412:ST7735/lib/st7735.c ****   ST7735_SendColor565 (lcd, color, CACHE_SIZE_MEM);
+ 906               		.loc 1 412 0
+ 907 03ba 40E0      		ldi r20,0
+ 908 03bc 50E4      		ldi r21,lo8(64)
+ 909 03be B701      		movw r22,r14
+ 910 03c0 CE01      		movw r24,r28
+ 911               	/* epilogue start */
+ 413:ST7735/lib/st7735.c **** }
+ 912               		.loc 1 413 0
+ 913 03c2 DF91      		pop r29
+ 914 03c4 CF91      		pop r28
+ 915               	.LVL55:
+ 916 03c6 0F91      		pop r16
+ 917 03c8 FF90      		pop r15
+ 918 03ca EF90      		pop r14
+ 919               	.LVL56:
+ 412:ST7735/lib/st7735.c **** }
+ 920               		.loc 1 412 0
+ 921 03cc 0C94 0000 		jmp ST7735_SendColor565
+ 922               	.LVL57:
+ 923               		.cfi_endproc
+ 924               	.LFE20:
+ 926               	.global	ST7735_DrawChar
+ 928               	ST7735_DrawChar:
+ 929               	.LFB21:
+ 414:ST7735/lib/st7735.c **** 
+ 415:ST7735/lib/st7735.c **** /**
+ 416:ST7735/lib/st7735.c ****  * @desc    Draw character
+ 417:ST7735/lib/st7735.c ****  *
+ 418:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 419:ST7735/lib/st7735.c ****  * @param   char character
+ 420:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 421:ST7735/lib/st7735.c ****  * @param   enum Size (X1, X2, X3)
+ 422:ST7735/lib/st7735.c ****  *
+ 423:ST7735/lib/st7735.c ****  * @return  void
+ 424:ST7735/lib/st7735.c ****  */
+ 425:ST7735/lib/st7735.c **** char ST7735_DrawChar (struct st7735 * lcd, char character, uint16_t color, enum Size size)
+ 426:ST7735/lib/st7735.c **** {
+ 930               		.loc 1 426 0
+ 931               		.cfi_startproc
+ 932               	.LVL58:
+ 933 03d0 8F92      		push r8
+ 934               	.LCFI32:
+ 935               		.cfi_def_cfa_offset 3
+ 936               		.cfi_offset 8, -2
+ 937 03d2 9F92      		push r9
+ 938               	.LCFI33:
+ 939               		.cfi_def_cfa_offset 4
+ 940               		.cfi_offset 9, -3
+ 941 03d4 AF92      		push r10
+ 942               	.LCFI34:
+ 943               		.cfi_def_cfa_offset 5
+ 944               		.cfi_offset 10, -4
+ 945 03d6 BF92      		push r11
+ 946               	.LCFI35:
+ 947               		.cfi_def_cfa_offset 6
+ 948               		.cfi_offset 11, -5
+ 949 03d8 CF92      		push r12
+ 950               	.LCFI36:
+ 951               		.cfi_def_cfa_offset 7
+ 952               		.cfi_offset 12, -6
+ 953 03da DF92      		push r13
+ 954               	.LCFI37:
+ 955               		.cfi_def_cfa_offset 8
+ 956               		.cfi_offset 13, -7
+ 957 03dc EF92      		push r14
+ 958               	.LCFI38:
+ 959               		.cfi_def_cfa_offset 9
+ 960               		.cfi_offset 14, -8
+ 961 03de FF92      		push r15
+ 962               	.LCFI39:
+ 963               		.cfi_def_cfa_offset 10
+ 964               		.cfi_offset 15, -9
+ 965 03e0 0F93      		push r16
+ 966               	.LCFI40:
+ 967               		.cfi_def_cfa_offset 11
+ 968               		.cfi_offset 16, -10
+ 969 03e2 1F93      		push r17
+ 970               	.LCFI41:
+ 971               		.cfi_def_cfa_offset 12
+ 972               		.cfi_offset 17, -11
+ 973 03e4 CF93      		push r28
+ 974               	.LCFI42:
+ 975               		.cfi_def_cfa_offset 13
+ 976               		.cfi_offset 28, -12
+ 977 03e6 DF93      		push r29
+ 978               	.LCFI43:
+ 979               		.cfi_def_cfa_offset 14
+ 980               		.cfi_offset 29, -13
+ 981               	/* prologue: function */
+ 982               	/* frame size = 0 */
+ 983               	/* stack size = 12 */
+ 984               	.L__stack_usage = 12
+ 985 03e8 EC01      		movw r28,r24
+ 986 03ea 8A01      		movw r16,r20
+ 987               	.LVL59:
+ 427:ST7735/lib/st7735.c ****   // variables
+ 428:ST7735/lib/st7735.c ****   uint8_t letter, idxCol, idxRow;
+ 429:ST7735/lib/st7735.c ****   // check if character is out of range
+ 430:ST7735/lib/st7735.c ****   if ((character < 0x20) &&
+ 431:ST7735/lib/st7735.c ****       (character > 0x7f)) { 
+ 432:ST7735/lib/st7735.c ****     // out of range
+ 433:ST7735/lib/st7735.c ****     return 0;
+ 434:ST7735/lib/st7735.c ****   }
+ 435:ST7735/lib/st7735.c ****   // last column of character array - 5 columns 
+ 436:ST7735/lib/st7735.c ****   idxCol = CHARS_COLS_LEN;
+ 437:ST7735/lib/st7735.c ****   // last row of character array - 8 rows / bits
+ 438:ST7735/lib/st7735.c ****   idxRow = CHARS_ROWS_LEN;
+ 439:ST7735/lib/st7735.c **** 
+ 440:ST7735/lib/st7735.c ****   // --------------------------------------
+ 441:ST7735/lib/st7735.c ****   // SIZE X1 - normal font 1x high, 1x wide
+ 442:ST7735/lib/st7735.c ****   // --------------------------------------
+ 443:ST7735/lib/st7735.c ****   if (size == X1) {  
+ 988               		.loc 1 443 0
+ 989 03ec 2111      		cpse r18,__zero_reg__
+ 990 03ee 00C0      		rjmp .L62
+ 991 03f0 45E0      		ldi r20,lo8(5)
+ 992 03f2 F42E      		mov r15,r20
+ 993               	.LVL60:
+ 994               	.LBB16:
+ 444:ST7735/lib/st7735.c ****     // loop through 5 bits
+ 445:ST7735/lib/st7735.c ****     while (idxCol--) {
+ 446:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 447:ST7735/lib/st7735.c ****       letter = pgm_read_byte (&FONTS[character - 32][idxCol]);
+ 995               		.loc 1 447 0
+ 996 03f4 70E0      		ldi r23,0
+ 997 03f6 6052      		subi r22,32
+ 998 03f8 7109      		sbc r23,__zero_reg__
+ 999               	.LVL61:
+ 1000 03fa F69E      		mul r15,r22
+ 1001 03fc 5001      		movw r10,r0
+ 1002 03fe F79E      		mul r15,r23
+ 1003 0400 B00C      		add r11,r0
+ 1004 0402 1124      		clr __zero_reg__
+ 1005               	.LVL62:
+ 1006               	.L37:
+ 1007               	.LBE16:
+ 445:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 1008               		.loc 1 445 0
+ 1009 0404 FA94      		dec r15
+ 1010               	.LVL63:
+ 1011 0406 8FEF      		ldi r24,lo8(-1)
+ 1012 0408 F816      		cp r15,r24
+ 1013 040a 01F4      		brne .+2
+ 1014 040c 00C0      		rjmp .L61
+ 1015               	.LVL64:
+ 1016               	.LBB17:
+ 1017               		.loc 1 447 0
+ 1018 040e F501      		movw r30,r10
+ 1019 0410 EF0D      		add r30,r15
+ 1020 0412 F11D      		adc r31,__zero_reg__
+ 1021 0414 E050      		subi r30,lo8(-(FONTS))
+ 1022 0416 F040      		sbci r31,hi8(-(FONTS))
+ 1023               	/* #APP */
+ 1024               	 ;  447 "ST7735/lib/st7735.c" 1
+ 1025 0418 E491      		lpm r30, Z
+ 1026               		
+ 1027               	 ;  0 "" 2
+ 1028               	.LVL65:
+ 1029               	/* #NOAPP */
+ 1030               	.LBE17:
+ 448:ST7735/lib/st7735.c ****       // loop through 8 bits
+ 449:ST7735/lib/st7735.c ****       while (idxRow--) {
+ 1031               		.loc 1 449 0
+ 1032 041a 58E0      		ldi r21,lo8(8)
+ 1033 041c E52E      		mov r14,r21
+ 450:ST7735/lib/st7735.c ****         // check if bit set
+ 451:ST7735/lib/st7735.c ****         if (letter & (1 << idxRow)) {
+ 1034               		.loc 1 451 0
+ 1035 041e CE2E      		mov r12,r30
+ 1036 0420 D12C      		mov r13,__zero_reg__
+ 1037               	.LVL66:
+ 1038               	.L33:
+ 449:ST7735/lib/st7735.c ****         // check if bit set
+ 1039               		.loc 1 449 0
+ 1040 0422 EA94      		dec r14
+ 1041               	.LVL67:
+ 1042 0424 8FEF      		ldi r24,lo8(-1)
+ 1043 0426 E816      		cp r14,r24
+ 1044 0428 01F0      		breq .L37
+ 1045 042a 4091 0000 		lds r20,cacheMemIndexRow
+ 1046 042e 6091 0000 		lds r22,cacheMemIndexCol
+ 1047               		.loc 1 451 0
+ 1048 0432 C601      		movw r24,r12
+ 1049 0434 0E2C      		mov r0,r14
+ 1050 0436 00C0      		rjmp 2f
+ 1051               		1:
+ 1052 0438 9595      		asr r25
+ 1053 043a 8795      		ror r24
+ 1054               		2:
+ 1055 043c 0A94      		dec r0
+ 1056 043e 02F4      		brpl 1b
+ 452:ST7735/lib/st7735.c ****           // draw pixel 
+ 453:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + idxRow, color);
+ 1057               		.loc 1 453 0
+ 1058 0440 4E0D      		add r20,r14
+ 1059 0442 6F0D      		add r22,r15
+ 451:ST7735/lib/st7735.c ****           // draw pixel 
+ 1060               		.loc 1 451 0
+ 1061 0444 80FF      		sbrs r24,0
+ 1062 0446 00C0      		rjmp .L34
+ 1063               		.loc 1 453 0
+ 1064 0448 9801      		movw r18,r16
+ 1065 044a 00C0      		rjmp .L57
+ 1066               	.L34:
+ 454:ST7735/lib/st7735.c ****         }
+ 455:ST7735/lib/st7735.c ****         else{
+ 456:ST7735/lib/st7735.c ****         ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + idxRow, BLACK);
+ 1067               		.loc 1 456 0
+ 1068 044c 20E0      		ldi r18,0
+ 1069 044e 30E0      		ldi r19,0
+ 1070               	.L57:
+ 1071 0450 CE01      		movw r24,r28
+ 1072 0452 0E94 0000 		call ST7735_DrawPixel
+ 1073               	.LVL68:
+ 1074 0456 00C0      		rjmp .L33
+ 1075               	.LVL69:
+ 1076               	.L62:
+ 457:ST7735/lib/st7735.c ****         }
+ 458:ST7735/lib/st7735.c ****       }
+ 459:ST7735/lib/st7735.c ****       // fill index row again
+ 460:ST7735/lib/st7735.c ****       idxRow = CHARS_ROWS_LEN;
+ 461:ST7735/lib/st7735.c ****     }
+ 462:ST7735/lib/st7735.c ****     // update x position
+ 463:ST7735/lib/st7735.c ****     cacheMemIndexCol = cacheMemIndexCol + CHARS_COLS_LEN + 1;
+ 464:ST7735/lib/st7735.c ****   
+ 465:ST7735/lib/st7735.c ****   // --------------------------------------
+ 466:ST7735/lib/st7735.c ****   // SIZE X2 - font 2x higher, normal wide
+ 467:ST7735/lib/st7735.c ****   // --------------------------------------
+ 468:ST7735/lib/st7735.c ****   } else if (size == X2) {
+ 1077               		.loc 1 468 0
+ 1078 0458 2038      		cpi r18,lo8(-128)
+ 1079 045a 01F0      		breq .+2
+ 1080 045c 00C0      		rjmp .L56
+ 1081 045e 25E0      		ldi r18,lo8(5)
+ 1082 0460 F22E      		mov r15,r18
+ 1083               	.LVL70:
+ 1084               	.LBB18:
+ 469:ST7735/lib/st7735.c ****     // loop through 5 bytes
+ 470:ST7735/lib/st7735.c ****     while (idxCol--) {
+ 471:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 472:ST7735/lib/st7735.c ****       letter = pgm_read_byte (&FONTS[character - 32][idxCol]);
+ 1085               		.loc 1 472 0
+ 1086 0462 70E0      		ldi r23,0
+ 1087 0464 6052      		subi r22,32
+ 1088 0466 7109      		sbc r23,__zero_reg__
+ 1089               	.LVL71:
+ 1090 0468 F69E      		mul r15,r22
+ 1091 046a 5001      		movw r10,r0
+ 1092 046c F79E      		mul r15,r23
+ 1093 046e B00C      		add r11,r0
+ 1094 0470 1124      		clr __zero_reg__
+ 1095               	.LVL72:
+ 1096               	.L46:
+ 1097               	.LBE18:
+ 470:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 1098               		.loc 1 470 0
+ 1099 0472 FA94      		dec r15
+ 1100               	.LVL73:
+ 1101 0474 8FEF      		ldi r24,lo8(-1)
+ 1102 0476 F816      		cp r15,r24
+ 1103 0478 01F4      		brne .+2
+ 1104 047a 00C0      		rjmp .L61
+ 1105               	.LVL74:
+ 1106               	.LBB19:
+ 1107               		.loc 1 472 0
+ 1108 047c F501      		movw r30,r10
+ 1109 047e EF0D      		add r30,r15
+ 1110 0480 F11D      		adc r31,__zero_reg__
+ 1111 0482 E050      		subi r30,lo8(-(FONTS))
+ 1112 0484 F040      		sbci r31,hi8(-(FONTS))
+ 1113               	/* #APP */
+ 1114               	 ;  472 "ST7735/lib/st7735.c" 1
+ 1115 0486 E491      		lpm r30, Z
+ 1116               		
+ 1117               	 ;  0 "" 2
+ 1118               	.LVL75:
+ 1119               	/* #NOAPP */
+ 1120               	.LBE19:
+ 473:ST7735/lib/st7735.c ****       // loop through 8 bits
+ 474:ST7735/lib/st7735.c ****       while (idxRow--) {
+ 1121               		.loc 1 474 0
+ 1122 0488 38E0      		ldi r19,lo8(8)
+ 1123 048a E32E      		mov r14,r19
+ 475:ST7735/lib/st7735.c ****         // check if bit set
+ 476:ST7735/lib/st7735.c ****         if (letter & (1 << idxRow)) {
+ 1124               		.loc 1 476 0
+ 1125 048c CE2E      		mov r12,r30
+ 1126 048e D12C      		mov r13,__zero_reg__
+ 1127               	.LVL76:
+ 1128               	.L42:
+ 474:ST7735/lib/st7735.c ****         // check if bit set
+ 1129               		.loc 1 474 0
+ 1130 0490 EA94      		dec r14
+ 1131               	.LVL77:
+ 1132 0492 8FEF      		ldi r24,lo8(-1)
+ 1133 0494 E816      		cp r14,r24
+ 1134 0496 01F0      		breq .L46
+ 1135 0498 4091 0000 		lds r20,cacheMemIndexRow
+ 1136 049c 6091 0000 		lds r22,cacheMemIndexCol
+ 1137 04a0 9E2C      		mov r9,r14
+ 1138 04a2 990C      		lsl r9
+ 1139               		.loc 1 476 0
+ 1140 04a4 C601      		movw r24,r12
+ 1141 04a6 0E2C      		mov r0,r14
+ 1142 04a8 00C0      		rjmp 2f
+ 1143               		1:
+ 1144 04aa 9595      		asr r25
+ 1145 04ac 8795      		ror r24
+ 1146               		2:
+ 1147 04ae 0A94      		dec r0
+ 1148 04b0 02F4      		brpl 1b
+ 477:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 478:ST7735/lib/st7735.c ****           // (idxRow << 1) - 2x multiplied 
+ 479:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + (idxRow << 1), color
+ 1149               		.loc 1 479 0
+ 1150 04b2 490D      		add r20,r9
+ 1151 04b4 6F0D      		add r22,r15
+ 476:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 1152               		.loc 1 476 0
+ 1153 04b6 80FF      		sbrs r24,0
+ 1154 04b8 00C0      		rjmp .L43
+ 1155               		.loc 1 479 0
+ 1156 04ba 9801      		movw r18,r16
+ 1157 04bc CE01      		movw r24,r28
+ 1158 04be 0E94 0000 		call ST7735_DrawPixel
+ 1159               	.LVL78:
+ 480:ST7735/lib/st7735.c ****           // draw second left down pixel
+ 481:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + (idxRow << 1) + 1, c
+ 1160               		.loc 1 481 0
+ 1161 04c2 4091 0000 		lds r20,cacheMemIndexRow
+ 1162 04c6 490D      		add r20,r9
+ 1163 04c8 4F5F      		subi r20,lo8(-(1))
+ 1164 04ca 6091 0000 		lds r22,cacheMemIndexCol
+ 1165 04ce 6F0D      		add r22,r15
+ 1166 04d0 9801      		movw r18,r16
+ 1167 04d2 00C0      		rjmp .L58
+ 1168               	.L43:
+ 482:ST7735/lib/st7735.c ****         }
+ 483:ST7735/lib/st7735.c ****         else{
+ 484:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 485:ST7735/lib/st7735.c ****           // (idxRow << 1) - 2x multiplied 
+ 486:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + (idxRow << 1), BLACK
+ 1169               		.loc 1 486 0
+ 1170 04d4 20E0      		ldi r18,0
+ 1171 04d6 30E0      		ldi r19,0
+ 1172 04d8 CE01      		movw r24,r28
+ 1173 04da 0E94 0000 		call ST7735_DrawPixel
+ 1174               	.LVL79:
+ 487:ST7735/lib/st7735.c ****           // draw second left down pixel
+ 488:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + idxCol, cacheMemIndexRow + (idxRow << 1) + 1, B
+ 1175               		.loc 1 488 0
+ 1176 04de 4091 0000 		lds r20,cacheMemIndexRow
+ 1177 04e2 490D      		add r20,r9
+ 1178 04e4 4F5F      		subi r20,lo8(-(1))
+ 1179 04e6 6091 0000 		lds r22,cacheMemIndexCol
+ 1180 04ea 6F0D      		add r22,r15
+ 1181 04ec 20E0      		ldi r18,0
+ 1182 04ee 30E0      		ldi r19,0
+ 1183               	.L58:
+ 1184 04f0 CE01      		movw r24,r28
+ 1185 04f2 0E94 0000 		call ST7735_DrawPixel
+ 1186               	.LVL80:
+ 1187 04f6 00C0      		rjmp .L42
+ 1188               	.LVL81:
+ 1189               	.L61:
+ 489:ST7735/lib/st7735.c ****         }
+ 490:ST7735/lib/st7735.c ****       }
+ 491:ST7735/lib/st7735.c ****       // fill index row again
+ 492:ST7735/lib/st7735.c ****       idxRow = CHARS_ROWS_LEN;
+ 493:ST7735/lib/st7735.c ****     }
+ 494:ST7735/lib/st7735.c ****     // update x position
+ 495:ST7735/lib/st7735.c ****     cacheMemIndexCol = cacheMemIndexCol + CHARS_COLS_LEN + 1;
+ 1190               		.loc 1 495 0
+ 1191 04f8 8091 0000 		lds r24,cacheMemIndexCol
+ 1192 04fc 9091 0000 		lds r25,cacheMemIndexCol+1
+ 1193 0500 0696      		adiw r24,6
+ 1194 0502 00C0      		rjmp .L60
+ 1195               	.LVL82:
+ 1196               	.L56:
+ 496:ST7735/lib/st7735.c **** 
+ 497:ST7735/lib/st7735.c ****   // --------------------------------------
+ 498:ST7735/lib/st7735.c ****   // SIZE X3 - font 2x higher, 2x wider
+ 499:ST7735/lib/st7735.c ****   // --------------------------------------
+ 500:ST7735/lib/st7735.c ****   } else if (size == X3) {
+ 1197               		.loc 1 500 0
+ 1198 0504 2138      		cpi r18,lo8(-127)
+ 1199 0506 01F0      		breq .+2
+ 1200 0508 00C0      		rjmp .L39
+ 1201 050a 85E0      		ldi r24,lo8(5)
+ 1202 050c 982E      		mov r9,r24
+ 1203               	.LVL83:
+ 1204               	.LBB20:
+ 501:ST7735/lib/st7735.c ****     // loop through 5 bytes
+ 502:ST7735/lib/st7735.c ****     while (idxCol--) {
+ 503:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 504:ST7735/lib/st7735.c ****       letter = pgm_read_byte (&FONTS[character - 32][idxCol]);
+ 1205               		.loc 1 504 0
+ 1206 050e 70E0      		ldi r23,0
+ 1207 0510 6052      		subi r22,32
+ 1208 0512 7109      		sbc r23,__zero_reg__
+ 1209               	.LVL84:
+ 1210 0514 969E      		mul r9,r22
+ 1211 0516 5001      		movw r10,r0
+ 1212 0518 979E      		mul r9,r23
+ 1213 051a B00C      		add r11,r0
+ 1214 051c 1124      		clr __zero_reg__
+ 1215               	.LVL85:
+ 1216               	.L53:
+ 1217               	.LBE20:
+ 502:ST7735/lib/st7735.c ****       // read from ROM memory 
+ 1218               		.loc 1 502 0
+ 1219 051e 9A94      		dec r9
+ 1220               	.LVL86:
+ 1221 0520 8FEF      		ldi r24,lo8(-1)
+ 1222 0522 9816      		cp r9,r24
+ 1223 0524 01F4      		brne .+2
+ 1224 0526 00C0      		rjmp .L63
+ 1225               	.LVL87:
+ 1226               	.LBB21:
+ 1227               		.loc 1 504 0
+ 1228 0528 F501      		movw r30,r10
+ 1229 052a E90D      		add r30,r9
+ 1230 052c F11D      		adc r31,__zero_reg__
+ 1231 052e E050      		subi r30,lo8(-(FONTS))
+ 1232 0530 F040      		sbci r31,hi8(-(FONTS))
+ 1233               	/* #APP */
+ 1234               	 ;  504 "ST7735/lib/st7735.c" 1
+ 1235 0532 E491      		lpm r30, Z
+ 1236               		
+ 1237               	 ;  0 "" 2
+ 1238               	.LVL88:
+ 1239               	/* #NOAPP */
+ 1240               	.LBE21:
+ 505:ST7735/lib/st7735.c ****       // loop through 8 bits
+ 506:ST7735/lib/st7735.c ****       while (idxRow--) {
+ 507:ST7735/lib/st7735.c ****         // check if bit set
+ 508:ST7735/lib/st7735.c ****         if (letter & (1 << idxRow)) {
+ 509:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 510:ST7735/lib/st7735.c ****           // (idxRow << 1) - 2x multiplied 
+ 511:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1), cacheMemIndexRow + (idxRow << 1)
+ 1241               		.loc 1 511 0
+ 1242 0534 F92C      		mov r15,r9
+ 1243 0536 FF0C      		lsl r15
+ 506:ST7735/lib/st7735.c ****         // check if bit set
+ 1244               		.loc 1 506 0
+ 1245 0538 98E0      		ldi r25,lo8(8)
+ 1246 053a 892E      		mov r8,r25
+ 508:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 1247               		.loc 1 508 0
+ 1248 053c CE2E      		mov r12,r30
+ 1249 053e D12C      		mov r13,__zero_reg__
+ 1250               	.LVL89:
+ 1251               	.L49:
+ 506:ST7735/lib/st7735.c ****         // check if bit set
+ 1252               		.loc 1 506 0
+ 1253 0540 8A94      		dec r8
+ 1254               	.LVL90:
+ 1255 0542 8FEF      		ldi r24,lo8(-1)
+ 1256 0544 8816      		cp r8,r24
+ 1257 0546 01F0      		breq .L53
+ 1258 0548 4091 0000 		lds r20,cacheMemIndexRow
+ 1259 054c 6091 0000 		lds r22,cacheMemIndexCol
+ 1260 0550 E82C      		mov r14,r8
+ 1261 0552 EE0C      		lsl r14
+ 508:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 1262               		.loc 1 508 0
+ 1263 0554 C601      		movw r24,r12
+ 1264 0556 082C      		mov r0,r8
+ 1265 0558 00C0      		rjmp 2f
+ 1266               		1:
+ 1267 055a 9595      		asr r25
+ 1268 055c 8795      		ror r24
+ 1269               		2:
+ 1270 055e 0A94      		dec r0
+ 1271 0560 02F4      		brpl 1b
+ 1272               		.loc 1 511 0
+ 1273 0562 4E0D      		add r20,r14
+ 1274 0564 6F0D      		add r22,r15
+ 508:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 1275               		.loc 1 508 0
+ 1276 0566 80FF      		sbrs r24,0
+ 1277 0568 00C0      		rjmp .L50
+ 1278               		.loc 1 511 0
+ 1279 056a 9801      		movw r18,r16
+ 1280 056c CE01      		movw r24,r28
+ 1281 056e 0E94 0000 		call ST7735_DrawPixel
+ 1282               	.LVL91:
+ 512:ST7735/lib/st7735.c ****           // draw second left down pixel
+ 513:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1), cacheMemIndexRow + (idxRow << 1)
+ 1283               		.loc 1 513 0
+ 1284 0572 4091 0000 		lds r20,cacheMemIndexRow
+ 1285 0576 4E0D      		add r20,r14
+ 1286 0578 4F5F      		subi r20,lo8(-(1))
+ 1287 057a 6091 0000 		lds r22,cacheMemIndexCol
+ 1288 057e 6F0D      		add r22,r15
+ 1289 0580 9801      		movw r18,r16
+ 1290 0582 CE01      		movw r24,r28
+ 1291 0584 0E94 0000 		call ST7735_DrawPixel
+ 1292               	.LVL92:
+ 514:ST7735/lib/st7735.c ****           // draw third right up pixel
+ 515:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1) + 1, cacheMemIndexRow + (idxRow <
+ 1293               		.loc 1 515 0
+ 1294 0588 4091 0000 		lds r20,cacheMemIndexRow
+ 1295 058c 4E0D      		add r20,r14
+ 1296 058e 6091 0000 		lds r22,cacheMemIndexCol
+ 1297 0592 6F5F      		subi r22,lo8(-(1))
+ 1298 0594 6F0D      		add r22,r15
+ 1299 0596 9801      		movw r18,r16
+ 1300 0598 CE01      		movw r24,r28
+ 1301 059a 0E94 0000 		call ST7735_DrawPixel
+ 1302               	.LVL93:
+ 516:ST7735/lib/st7735.c ****           // draw fourth right down pixel
+ 517:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1) + 1, cacheMemIndexRow + (idxRow <
+ 1303               		.loc 1 517 0
+ 1304 059e 4091 0000 		lds r20,cacheMemIndexRow
+ 1305 05a2 4E0D      		add r20,r14
+ 1306 05a4 4F5F      		subi r20,lo8(-(1))
+ 1307 05a6 6091 0000 		lds r22,cacheMemIndexCol
+ 1308 05aa 6F5F      		subi r22,lo8(-(1))
+ 1309 05ac 6F0D      		add r22,r15
+ 1310 05ae 9801      		movw r18,r16
+ 1311 05b0 00C0      		rjmp .L59
+ 1312               	.L50:
+ 518:ST7735/lib/st7735.c ****         }
+ 519:ST7735/lib/st7735.c ****         else{
+ 520:ST7735/lib/st7735.c ****           // draw first left up pixel; 
+ 521:ST7735/lib/st7735.c ****           // (idxRow << 1) - 2x multiplied 
+ 522:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1), cacheMemIndexRow + (idxRow << 1)
+ 1313               		.loc 1 522 0
+ 1314 05b2 20E0      		ldi r18,0
+ 1315 05b4 30E0      		ldi r19,0
+ 1316 05b6 CE01      		movw r24,r28
+ 1317 05b8 0E94 0000 		call ST7735_DrawPixel
+ 1318               	.LVL94:
+ 523:ST7735/lib/st7735.c ****           // draw second left down pixel
+ 524:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1), cacheMemIndexRow + (idxRow << 1)
+ 1319               		.loc 1 524 0
+ 1320 05bc 4091 0000 		lds r20,cacheMemIndexRow
+ 1321 05c0 4E0D      		add r20,r14
+ 1322 05c2 4F5F      		subi r20,lo8(-(1))
+ 1323 05c4 6091 0000 		lds r22,cacheMemIndexCol
+ 1324 05c8 6F0D      		add r22,r15
+ 1325 05ca 20E0      		ldi r18,0
+ 1326 05cc 30E0      		ldi r19,0
+ 1327 05ce CE01      		movw r24,r28
+ 1328 05d0 0E94 0000 		call ST7735_DrawPixel
+ 1329               	.LVL95:
+ 525:ST7735/lib/st7735.c ****           // draw third right up pixel
+ 526:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1) + 1, cacheMemIndexRow + (idxRow <
+ 1330               		.loc 1 526 0
+ 1331 05d4 4091 0000 		lds r20,cacheMemIndexRow
+ 1332 05d8 4E0D      		add r20,r14
+ 1333 05da 6091 0000 		lds r22,cacheMemIndexCol
+ 1334 05de 6F5F      		subi r22,lo8(-(1))
+ 1335 05e0 6F0D      		add r22,r15
+ 1336 05e2 20E0      		ldi r18,0
+ 1337 05e4 30E0      		ldi r19,0
+ 1338 05e6 CE01      		movw r24,r28
+ 1339 05e8 0E94 0000 		call ST7735_DrawPixel
+ 1340               	.LVL96:
+ 527:ST7735/lib/st7735.c ****           // draw fourth right down pixel
+ 528:ST7735/lib/st7735.c ****           ST7735_DrawPixel (lcd, cacheMemIndexCol + (idxCol << 1) + 1, cacheMemIndexRow + (idxRow <
+ 1341               		.loc 1 528 0
+ 1342 05ec 4091 0000 		lds r20,cacheMemIndexRow
+ 1343 05f0 4E0D      		add r20,r14
+ 1344 05f2 4F5F      		subi r20,lo8(-(1))
+ 1345 05f4 6091 0000 		lds r22,cacheMemIndexCol
+ 1346 05f8 6F5F      		subi r22,lo8(-(1))
+ 1347 05fa 6F0D      		add r22,r15
+ 1348 05fc 20E0      		ldi r18,0
+ 1349 05fe 30E0      		ldi r19,0
+ 1350               	.L59:
+ 1351 0600 CE01      		movw r24,r28
+ 1352 0602 0E94 0000 		call ST7735_DrawPixel
+ 1353               	.LVL97:
+ 1354 0606 00C0      		rjmp .L49
+ 1355               	.LVL98:
+ 1356               	.L63:
+ 529:ST7735/lib/st7735.c ****         }
+ 530:ST7735/lib/st7735.c ****       }
+ 531:ST7735/lib/st7735.c ****       // fill index row again
+ 532:ST7735/lib/st7735.c ****       idxRow = CHARS_ROWS_LEN;
+ 533:ST7735/lib/st7735.c ****     }
+ 534:ST7735/lib/st7735.c **** 
+ 535:ST7735/lib/st7735.c ****     // update x position
+ 536:ST7735/lib/st7735.c ****     cacheMemIndexCol = cacheMemIndexCol + CHARS_COLS_LEN + CHARS_COLS_LEN + 1;
+ 1357               		.loc 1 536 0
+ 1358 0608 8091 0000 		lds r24,cacheMemIndexCol
+ 1359 060c 9091 0000 		lds r25,cacheMemIndexCol+1
+ 1360 0610 0B96      		adiw r24,11
+ 1361               	.LVL99:
+ 1362               	.L60:
+ 1363 0612 9093 0000 		sts cacheMemIndexCol+1,r25
+ 1364 0616 8093 0000 		sts cacheMemIndexCol,r24
+ 1365               	.L39:
+ 537:ST7735/lib/st7735.c ****   }
+ 538:ST7735/lib/st7735.c **** 
+ 539:ST7735/lib/st7735.c ****   // return exit
+ 540:ST7735/lib/st7735.c ****   return ST7735_SUCCESS;
+ 541:ST7735/lib/st7735.c **** }
+ 1366               		.loc 1 541 0
+ 1367 061a 80E0      		ldi r24,0
+ 1368               	/* epilogue start */
+ 1369 061c DF91      		pop r29
+ 1370 061e CF91      		pop r28
+ 1371               	.LVL100:
+ 1372 0620 1F91      		pop r17
+ 1373 0622 0F91      		pop r16
+ 1374               	.LVL101:
+ 1375 0624 FF90      		pop r15
+ 1376 0626 EF90      		pop r14
+ 1377 0628 DF90      		pop r13
+ 1378 062a CF90      		pop r12
+ 1379 062c BF90      		pop r11
+ 1380 062e AF90      		pop r10
+ 1381 0630 9F90      		pop r9
+ 1382 0632 8F90      		pop r8
+ 1383 0634 0895      		ret
+ 1384               		.cfi_endproc
+ 1385               	.LFE21:
+ 1387               	.global	ST7735_SetPosition
+ 1389               	ST7735_SetPosition:
+ 1390               	.LFB22:
+ 542:ST7735/lib/st7735.c **** 
+ 543:ST7735/lib/st7735.c **** /**
+ 544:ST7735/lib/st7735.c ****  * @desc    Set text position x, y
+ 545:ST7735/lib/st7735.c ****  *
+ 546:ST7735/lib/st7735.c ****  * @param   uint8_t x - position
+ 547:ST7735/lib/st7735.c ****  * @param   uint8_t y - position
+ 548:ST7735/lib/st7735.c ****  *
+ 549:ST7735/lib/st7735.c ****  * @return  char
+ 550:ST7735/lib/st7735.c ****  */
+ 551:ST7735/lib/st7735.c **** char ST7735_SetPosition (uint8_t x, uint8_t y)
+ 552:ST7735/lib/st7735.c **** {
+ 1391               		.loc 1 552 0
+ 1392               		.cfi_startproc
+ 1393               	.LVL102:
+ 1394               	/* prologue: function */
+ 1395               	/* frame size = 0 */
+ 1396               	/* stack size = 0 */
+ 1397               	.L__stack_usage = 0
+ 553:ST7735/lib/st7735.c ****   // check if coordinates is out of range
+ 554:ST7735/lib/st7735.c ****   if ((x > MAX_X) && (y > MAX_Y)) {
+ 1398               		.loc 1 554 0
+ 1399 0636 8138      		cpi r24,lo8(-127)
+ 1400 0638 00F0      		brlo .L65
+ 1401               		.loc 1 554 0 is_stmt 0 discriminator 1
+ 1402 063a 6138      		cpi r22,lo8(-127)
+ 1403 063c 00F4      		brsh .L67
+ 555:ST7735/lib/st7735.c ****     // error
+ 556:ST7735/lib/st7735.c ****     return ST7735_ERROR;
+ 557:ST7735/lib/st7735.c **** 
+ 558:ST7735/lib/st7735.c ****   } else if ((x > MAX_X) && (y <= MAX_Y)) {
+ 559:ST7735/lib/st7735.c ****     // set position y
+ 560:ST7735/lib/st7735.c ****     cacheMemIndexRow = y;
+ 1404               		.loc 1 560 0 is_stmt 1
+ 1405 063e 70E0      		ldi r23,0
+ 1406 0640 7093 0000 		sts cacheMemIndexRow+1,r23
+ 1407 0644 6093 0000 		sts cacheMemIndexRow,r22
+ 561:ST7735/lib/st7735.c ****     // set position x
+ 562:ST7735/lib/st7735.c ****     cacheMemIndexCol = 2;
+ 1408               		.loc 1 562 0
+ 1409 0648 82E0      		ldi r24,lo8(2)
+ 1410 064a 90E0      		ldi r25,0
+ 1411               	.LVL103:
+ 1412 064c 00C0      		rjmp .L68
+ 1413               	.LVL104:
+ 1414               	.L65:
+ 563:ST7735/lib/st7735.c ****   } else {
+ 564:ST7735/lib/st7735.c ****     // set position y 
+ 565:ST7735/lib/st7735.c ****     cacheMemIndexRow = y;
+ 1415               		.loc 1 565 0
+ 1416 064e 70E0      		ldi r23,0
+ 1417 0650 7093 0000 		sts cacheMemIndexRow+1,r23
+ 1418 0654 6093 0000 		sts cacheMemIndexRow,r22
+ 566:ST7735/lib/st7735.c ****     // set position x
+ 567:ST7735/lib/st7735.c ****     cacheMemIndexCol = x;
+ 1419               		.loc 1 567 0
+ 1420 0658 90E0      		ldi r25,0
+ 1421               	.LVL105:
+ 1422               	.L68:
+ 1423 065a 9093 0000 		sts cacheMemIndexCol+1,r25
+ 1424 065e 8093 0000 		sts cacheMemIndexCol,r24
+ 568:ST7735/lib/st7735.c ****   }
+ 569:ST7735/lib/st7735.c ****   // success
+ 570:ST7735/lib/st7735.c ****   return ST7735_SUCCESS;
+ 1425               		.loc 1 570 0
+ 1426 0662 80E0      		ldi r24,0
+ 1427 0664 0895      		ret
+ 1428               	.LVL106:
+ 1429               	.L67:
+ 556:ST7735/lib/st7735.c **** 
+ 1430               		.loc 1 556 0
+ 1431 0666 81E0      		ldi r24,lo8(1)
+ 1432               	.LVL107:
+ 571:ST7735/lib/st7735.c **** }
+ 1433               		.loc 1 571 0
+ 1434 0668 0895      		ret
+ 1435               		.cfi_endproc
+ 1436               	.LFE22:
+ 1438               	.global	ST7735_CheckPosition
+ 1440               	ST7735_CheckPosition:
+ 1441               	.LFB23:
+ 572:ST7735/lib/st7735.c **** 
+ 573:ST7735/lib/st7735.c **** /**
+ 574:ST7735/lib/st7735.c ****  * @desc    Check text position x, y
+ 575:ST7735/lib/st7735.c ****  *
+ 576:ST7735/lib/st7735.c ****  * @param   unsigned char x - position
+ 577:ST7735/lib/st7735.c ****  * @param   unsigned char y - position
+ 578:ST7735/lib/st7735.c ****  * @param   unsigned char
+ 579:ST7735/lib/st7735.c ****  *
+ 580:ST7735/lib/st7735.c ****  * @return  char
+ 581:ST7735/lib/st7735.c ****  */
+ 582:ST7735/lib/st7735.c **** char ST7735_CheckPosition (unsigned char x, unsigned char y, unsigned char max_y, enum Size size)
+ 583:ST7735/lib/st7735.c **** {
+ 1442               		.loc 1 583 0
+ 1443               		.cfi_startproc
+ 1444               	.LVL108:
+ 1445               	/* prologue: function */
+ 1446               	/* frame size = 0 */
+ 1447               	/* stack size = 0 */
+ 1448               	.L__stack_usage = 0
+ 584:ST7735/lib/st7735.c ****   // check if coordinates is out of range
+ 585:ST7735/lib/st7735.c ****   if ((x > MAX_X) && (y > max_y)) {
+ 1449               		.loc 1 585 0
+ 1450 066a 8138      		cpi r24,lo8(-127)
+ 1451 066c 00F0      		brlo .L71
+ 1452               		.loc 1 585 0 is_stmt 0 discriminator 1
+ 1453 066e 4617      		cp r20,r22
+ 1454 0670 00F0      		brlo .L72
+ 586:ST7735/lib/st7735.c ****     // out of range
+ 587:ST7735/lib/st7735.c ****     return ST7735_ERROR;
+ 588:ST7735/lib/st7735.c **** 
+ 589:ST7735/lib/st7735.c ****   }
+ 590:ST7735/lib/st7735.c ****   // if next line
+ 591:ST7735/lib/st7735.c ****   if ((x > MAX_X) && (y <= max_y)) {
+ 592:ST7735/lib/st7735.c ****     // set position y
+ 593:ST7735/lib/st7735.c ****     cacheMemIndexRow = y;
+ 1455               		.loc 1 593 0 is_stmt 1
+ 1456 0672 70E0      		ldi r23,0
+ 1457 0674 7093 0000 		sts cacheMemIndexRow+1,r23
+ 1458 0678 6093 0000 		sts cacheMemIndexRow,r22
+ 594:ST7735/lib/st7735.c ****     // set position x
+ 595:ST7735/lib/st7735.c ****     cacheMemIndexCol = 2;
+ 1459               		.loc 1 595 0
+ 1460 067c 82E0      		ldi r24,lo8(2)
+ 1461 067e 90E0      		ldi r25,0
+ 1462               	.LVL109:
+ 1463 0680 9093 0000 		sts cacheMemIndexCol+1,r25
+ 1464 0684 8093 0000 		sts cacheMemIndexCol,r24
+ 1465               	.L71:
+ 596:ST7735/lib/st7735.c ****   } 
+ 597:ST7735/lib/st7735.c **** 
+ 598:ST7735/lib/st7735.c ****   // success
+ 599:ST7735/lib/st7735.c ****   return ST7735_SUCCESS;
+ 1466               		.loc 1 599 0
+ 1467 0688 80E0      		ldi r24,0
+ 1468 068a 0895      		ret
+ 1469               	.LVL110:
+ 1470               	.L72:
+ 587:ST7735/lib/st7735.c **** 
+ 1471               		.loc 1 587 0
+ 1472 068c 81E0      		ldi r24,lo8(1)
+ 1473               	.LVL111:
+ 600:ST7735/lib/st7735.c **** }
+ 1474               		.loc 1 600 0
+ 1475 068e 0895      		ret
+ 1476               		.cfi_endproc
+ 1477               	.LFE23:
+ 1479               	.global	ST7735_DrawString
+ 1481               	ST7735_DrawString:
+ 1482               	.LFB24:
+ 601:ST7735/lib/st7735.c **** 
+ 602:ST7735/lib/st7735.c **** /**
+ 603:ST7735/lib/st7735.c ****  * @desc    Draw string
+ 604:ST7735/lib/st7735.c ****  *
+ 605:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 606:ST7735/lib/st7735.c ****  * @param   char * string 
+ 607:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 608:ST7735/lib/st7735.c ****  * @param   enum Size (X1, X2, X3)
+ 609:ST7735/lib/st7735.c ****  *
+ 610:ST7735/lib/st7735.c ****  * @return  void
+ 611:ST7735/lib/st7735.c ****  */
+ 612:ST7735/lib/st7735.c **** void ST7735_DrawString (struct st7735 * lcd, char *str, uint16_t color, enum Size size)
+ 613:ST7735/lib/st7735.c **** {
+ 1483               		.loc 1 613 0
+ 1484               		.cfi_startproc
+ 1485               	.LVL112:
+ 1486 0690 AF92      		push r10
+ 1487               	.LCFI44:
+ 1488               		.cfi_def_cfa_offset 3
+ 1489               		.cfi_offset 10, -2
+ 1490 0692 BF92      		push r11
+ 1491               	.LCFI45:
+ 1492               		.cfi_def_cfa_offset 4
+ 1493               		.cfi_offset 11, -3
+ 1494 0694 CF92      		push r12
+ 1495               	.LCFI46:
+ 1496               		.cfi_def_cfa_offset 5
+ 1497               		.cfi_offset 12, -4
+ 1498 0696 DF92      		push r13
+ 1499               	.LCFI47:
+ 1500               		.cfi_def_cfa_offset 6
+ 1501               		.cfi_offset 13, -5
+ 1502 0698 EF92      		push r14
+ 1503               	.LCFI48:
+ 1504               		.cfi_def_cfa_offset 7
+ 1505               		.cfi_offset 14, -6
+ 1506 069a FF92      		push r15
+ 1507               	.LCFI49:
+ 1508               		.cfi_def_cfa_offset 8
+ 1509               		.cfi_offset 15, -7
+ 1510 069c 0F93      		push r16
+ 1511               	.LCFI50:
+ 1512               		.cfi_def_cfa_offset 9
+ 1513               		.cfi_offset 16, -8
+ 1514 069e 1F93      		push r17
+ 1515               	.LCFI51:
+ 1516               		.cfi_def_cfa_offset 10
+ 1517               		.cfi_offset 17, -9
+ 1518 06a0 CF93      		push r28
+ 1519               	.LCFI52:
+ 1520               		.cfi_def_cfa_offset 11
+ 1521               		.cfi_offset 28, -10
+ 1522 06a2 DF93      		push r29
+ 1523               	.LCFI53:
+ 1524               		.cfi_def_cfa_offset 12
+ 1525               		.cfi_offset 29, -11
+ 1526               	/* prologue: function */
+ 1527               	/* frame size = 0 */
+ 1528               	/* stack size = 10 */
+ 1529               	.L__stack_usage = 10
+ 1530 06a4 6C01      		movw r12,r24
+ 1531 06a6 5A01      		movw r10,r20
+ 1532 06a8 022F      		mov r16,r18
+ 1533               	.LVL113:
+ 614:ST7735/lib/st7735.c ****   // variables
+ 615:ST7735/lib/st7735.c ****   unsigned int i = 0;
+ 616:ST7735/lib/st7735.c ****   unsigned char check;
+ 617:ST7735/lib/st7735.c ****   unsigned char delta_y;
+ 618:ST7735/lib/st7735.c ****   unsigned char max_y_pos;
+ 619:ST7735/lib/st7735.c ****   unsigned char new_x_pos;
+ 620:ST7735/lib/st7735.c ****   unsigned char new_y_pos;
+ 621:ST7735/lib/st7735.c **** 
+ 622:ST7735/lib/st7735.c ****   // loop through character of string
+ 623:ST7735/lib/st7735.c ****   while (str[i] != '\0') {
+ 624:ST7735/lib/st7735.c ****     // max x position character
+ 625:ST7735/lib/st7735.c ****     new_x_pos = cacheMemIndexCol + CHARS_COLS_LEN + (size & 0x0F);
+ 626:ST7735/lib/st7735.c ****     // delta y
+ 627:ST7735/lib/st7735.c ****     delta_y = CHARS_ROWS_LEN + (size >> 4);
+ 1534               		.loc 1 627 0
+ 1535 06aa 122F      		mov r17,r18
+ 1536 06ac 1295      		swap r17
+ 1537 06ae 1F70      		andi r17,lo8(15)
+ 1538 06b0 185F      		subi r17,lo8(-(8))
+ 628:ST7735/lib/st7735.c ****     // max y position character
+ 629:ST7735/lib/st7735.c ****     new_y_pos = cacheMemIndexRow + delta_y;
+ 630:ST7735/lib/st7735.c ****     // max y pos
+ 631:ST7735/lib/st7735.c ****     max_y_pos = MAX_Y - delta_y;
+ 1539               		.loc 1 631 0
+ 1540 06b2 80E8      		ldi r24,lo8(-128)
+ 1541               	.LVL114:
+ 1542 06b4 F82E      		mov r15,r24
+ 1543 06b6 F11A      		sub r15,r17
+ 1544 06b8 EB01      		movw r28,r22
+ 632:ST7735/lib/st7735.c ****     // control if will be in range
+ 633:ST7735/lib/st7735.c ****     check = ST7735_CheckPosition (new_x_pos, new_y_pos, max_y_pos, size);
+ 1545               		.loc 1 633 0
+ 1546 06ba 822F      		mov r24,r18
+ 1547 06bc 8F70      		andi r24,lo8(15)
+ 1548 06be E82E      		mov r14,r24
+ 1549               	.LVL115:
+ 1550               	.L75:
+ 623:ST7735/lib/st7735.c ****     // max x position character
+ 1551               		.loc 1 623 0
+ 1552 06c0 8881      		ld r24,Y
+ 1553 06c2 8823      		tst r24
+ 1554 06c4 01F0      		breq .L78
+ 1555               	.LVL116:
+ 1556               		.loc 1 633 0
+ 1557 06c6 6091 0000 		lds r22,cacheMemIndexRow
+ 1558 06ca 610F      		add r22,r17
+ 1559               	.LVL117:
+ 1560 06cc 8091 0000 		lds r24,cacheMemIndexCol
+ 1561 06d0 8B5F      		subi r24,lo8(-(5))
+ 1562 06d2 202F      		mov r18,r16
+ 1563 06d4 4F2D      		mov r20,r15
+ 1564 06d6 8E0D      		add r24,r14
+ 1565 06d8 0E94 0000 		call ST7735_CheckPosition
+ 1566               	.LVL118:
+ 634:ST7735/lib/st7735.c ****     // update position
+ 635:ST7735/lib/st7735.c ****     if (ST7735_SUCCESS == check) {
+ 1567               		.loc 1 635 0
+ 1568 06dc 8111      		cpse r24,__zero_reg__
+ 1569 06de 00C0      		rjmp .L75
+ 1570               	.LVL119:
+ 636:ST7735/lib/st7735.c ****       // read characters and increment index
+ 637:ST7735/lib/st7735.c ****       ST7735_DrawChar (lcd, str[i++], color, size);
+ 1571               		.loc 1 637 0
+ 1572 06e0 202F      		mov r18,r16
+ 1573 06e2 A501      		movw r20,r10
+ 1574 06e4 6991      		ld r22,Y+
+ 1575               	.LVL120:
+ 1576 06e6 C601      		movw r24,r12
+ 1577               	.LVL121:
+ 1578 06e8 0E94 0000 		call ST7735_DrawChar
+ 1579               	.LVL122:
+ 1580 06ec 00C0      		rjmp .L75
+ 1581               	.LVL123:
+ 1582               	.L78:
+ 1583               	/* epilogue start */
+ 638:ST7735/lib/st7735.c ****     }
+ 639:ST7735/lib/st7735.c ****   }
+ 640:ST7735/lib/st7735.c **** }
+ 1584               		.loc 1 640 0
+ 1585 06ee DF91      		pop r29
+ 1586 06f0 CF91      		pop r28
+ 1587               	.LVL124:
+ 1588 06f2 1F91      		pop r17
+ 1589 06f4 0F91      		pop r16
+ 1590               	.LVL125:
+ 1591 06f6 FF90      		pop r15
+ 1592 06f8 EF90      		pop r14
+ 1593 06fa DF90      		pop r13
+ 1594 06fc CF90      		pop r12
+ 1595               	.LVL126:
+ 1596 06fe BF90      		pop r11
+ 1597 0700 AF90      		pop r10
+ 1598               	.LVL127:
+ 1599 0702 0895      		ret
+ 1600               		.cfi_endproc
+ 1601               	.LFE24:
+ 1603               	.global	ST7735_DrawLine
+ 1605               	ST7735_DrawLine:
+ 1606               	.LFB25:
+ 641:ST7735/lib/st7735.c **** 
+ 642:ST7735/lib/st7735.c **** /**
+ 643:ST7735/lib/st7735.c ****  * @desc    Draw line by Bresenham algoritm
+ 644:ST7735/lib/st7735.c ****  * @surce   https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
+ 645:ST7735/lib/st7735.c ****  *  
+ 646:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 647:ST7735/lib/st7735.c ****  * @param   uint8_t x start position / 0 <= cols <= MAX_X-1
+ 648:ST7735/lib/st7735.c ****  * @param   uint8_t x end position   / 0 <= cols <= MAX_X-1
+ 649:ST7735/lib/st7735.c ****  * @param   uint8_t y start position / 0 <= rows <= MAX_Y-1 
+ 650:ST7735/lib/st7735.c ****  * @param   uint8_t y end position   / 0 <= rows <= MAX_Y-1
+ 651:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 652:ST7735/lib/st7735.c ****  *
+ 653:ST7735/lib/st7735.c ****  * @return  void
+ 654:ST7735/lib/st7735.c ****  */
+ 655:ST7735/lib/st7735.c **** char ST7735_DrawLine (struct st7735 * lcd, uint8_t x1, uint8_t x2, uint8_t y1, uint8_t y2, uint16_t
+ 656:ST7735/lib/st7735.c **** {
+ 1607               		.loc 1 656 0
+ 1608               		.cfi_startproc
+ 1609               	.LVL128:
+ 1610 0704 4F92      		push r4
+ 1611               	.LCFI54:
+ 1612               		.cfi_def_cfa_offset 3
+ 1613               		.cfi_offset 4, -2
+ 1614 0706 5F92      		push r5
+ 1615               	.LCFI55:
+ 1616               		.cfi_def_cfa_offset 4
+ 1617               		.cfi_offset 5, -3
+ 1618 0708 6F92      		push r6
+ 1619               	.LCFI56:
+ 1620               		.cfi_def_cfa_offset 5
+ 1621               		.cfi_offset 6, -4
+ 1622 070a 7F92      		push r7
+ 1623               	.LCFI57:
+ 1624               		.cfi_def_cfa_offset 6
+ 1625               		.cfi_offset 7, -5
+ 1626 070c 8F92      		push r8
+ 1627               	.LCFI58:
+ 1628               		.cfi_def_cfa_offset 7
+ 1629               		.cfi_offset 8, -6
+ 1630 070e 9F92      		push r9
+ 1631               	.LCFI59:
+ 1632               		.cfi_def_cfa_offset 8
+ 1633               		.cfi_offset 9, -7
+ 1634 0710 AF92      		push r10
+ 1635               	.LCFI60:
+ 1636               		.cfi_def_cfa_offset 9
+ 1637               		.cfi_offset 10, -8
+ 1638 0712 BF92      		push r11
+ 1639               	.LCFI61:
+ 1640               		.cfi_def_cfa_offset 10
+ 1641               		.cfi_offset 11, -9
+ 1642 0714 CF92      		push r12
+ 1643               	.LCFI62:
+ 1644               		.cfi_def_cfa_offset 11
+ 1645               		.cfi_offset 12, -10
+ 1646 0716 DF92      		push r13
+ 1647               	.LCFI63:
+ 1648               		.cfi_def_cfa_offset 12
+ 1649               		.cfi_offset 13, -11
+ 1650 0718 EF92      		push r14
+ 1651               	.LCFI64:
+ 1652               		.cfi_def_cfa_offset 13
+ 1653               		.cfi_offset 14, -12
+ 1654 071a FF92      		push r15
+ 1655               	.LCFI65:
+ 1656               		.cfi_def_cfa_offset 14
+ 1657               		.cfi_offset 15, -13
+ 1658 071c 0F93      		push r16
+ 1659               	.LCFI66:
+ 1660               		.cfi_def_cfa_offset 15
+ 1661               		.cfi_offset 16, -14
+ 1662 071e 1F93      		push r17
+ 1663               	.LCFI67:
+ 1664               		.cfi_def_cfa_offset 16
+ 1665               		.cfi_offset 17, -15
+ 1666 0720 CF93      		push r28
+ 1667               	.LCFI68:
+ 1668               		.cfi_def_cfa_offset 17
+ 1669               		.cfi_offset 28, -16
+ 1670 0722 DF93      		push r29
+ 1671               	.LCFI69:
+ 1672               		.cfi_def_cfa_offset 18
+ 1673               		.cfi_offset 29, -17
+ 1674               	/* prologue: function */
+ 1675               	/* frame size = 0 */
+ 1676               	/* stack size = 16 */
+ 1677               	.L__stack_usage = 16
+ 1678 0724 6C01      		movw r12,r24
+ 1679 0726 762E      		mov r7,r22
+ 1680 0728 542E      		mov r5,r20
+ 1681 072a 122F      		mov r17,r18
+ 1682 072c 402E      		mov r4,r16
+ 1683               	.LVL129:
+ 657:ST7735/lib/st7735.c ****   // determinant
+ 658:ST7735/lib/st7735.c ****   int16_t D;
+ 659:ST7735/lib/st7735.c ****   // deltas
+ 660:ST7735/lib/st7735.c ****   int16_t delta_x, delta_y;
+ 661:ST7735/lib/st7735.c ****   // steps
+ 662:ST7735/lib/st7735.c ****   int16_t trace_x = 1, trace_y = 1;
+ 663:ST7735/lib/st7735.c **** 
+ 664:ST7735/lib/st7735.c ****   // delta x
+ 665:ST7735/lib/st7735.c ****   delta_x = x2 - x1;
+ 1684               		.loc 1 665 0
+ 1685 072e 842F      		mov r24,r20
+ 1686               	.LVL130:
+ 1687 0730 90E0      		ldi r25,0
+ 1688 0732 861B      		sub r24,r22
+ 1689 0734 9109      		sbc r25,__zero_reg__
+ 1690               	.LVL131:
+ 666:ST7735/lib/st7735.c ****   // delta y
+ 667:ST7735/lib/st7735.c ****   delta_y = y2 - y1;
+ 1691               		.loc 1 667 0
+ 1692 0736 C02F      		mov r28,r16
+ 1693 0738 D0E0      		ldi r29,0
+ 1694 073a C21B      		sub r28,r18
+ 1695 073c D109      		sbc r29,__zero_reg__
+ 1696               	.LVL132:
+ 668:ST7735/lib/st7735.c **** 
+ 669:ST7735/lib/st7735.c ****   // check if x2 > x1
+ 670:ST7735/lib/st7735.c ****   if (delta_x < 0) {
+ 1697               		.loc 1 670 0
+ 1698 073e 97FF      		sbrs r25,7
+ 1699 0740 00C0      		rjmp .L90
+ 671:ST7735/lib/st7735.c ****     // negate delta x
+ 672:ST7735/lib/st7735.c ****     delta_x = -delta_x;
+ 1700               		.loc 1 672 0
+ 1701 0742 9195      		neg r25
+ 1702 0744 8195      		neg r24
+ 1703 0746 9109      		sbc r25,__zero_reg__
+ 1704               	.LVL133:
+ 673:ST7735/lib/st7735.c ****     // negate step x
+ 674:ST7735/lib/st7735.c ****     trace_x = -trace_x;
+ 1705               		.loc 1 674 0
+ 1706 0748 0FEF      		ldi r16,lo8(-1)
+ 1707               	.LVL134:
+ 1708 074a 00C0      		rjmp .L80
+ 1709               	.LVL135:
+ 1710               	.L90:
+ 662:ST7735/lib/st7735.c **** 
+ 1711               		.loc 1 662 0
+ 1712 074c 01E0      		ldi r16,lo8(1)
+ 1713               	.LVL136:
+ 1714               	.L80:
+ 675:ST7735/lib/st7735.c ****   }
+ 676:ST7735/lib/st7735.c **** 
+ 677:ST7735/lib/st7735.c ****   // check if y2 > y1
+ 678:ST7735/lib/st7735.c ****   if (delta_y < 0) {
+ 1715               		.loc 1 678 0
+ 1716 074e D7FF      		sbrs r29,7
+ 1717 0750 00C0      		rjmp .L91
+ 679:ST7735/lib/st7735.c ****     // negate detla y
+ 680:ST7735/lib/st7735.c ****     delta_y = -delta_y;
+ 1718               		.loc 1 680 0
+ 1719 0752 D195      		neg r29
+ 1720 0754 C195      		neg r28
+ 1721 0756 D109      		sbc r29,__zero_reg__
+ 1722               	.LVL137:
+ 681:ST7735/lib/st7735.c ****     // negate step y
+ 682:ST7735/lib/st7735.c ****     trace_y = -trace_y;
+ 1723               		.loc 1 682 0
+ 1724 0758 6624      		clr r6
+ 1725 075a 6A94      		dec r6
+ 1726 075c 00C0      		rjmp .L81
+ 1727               	.LVL138:
+ 1728               	.L91:
+ 662:ST7735/lib/st7735.c **** 
+ 1729               		.loc 1 662 0
+ 1730 075e 6624      		clr r6
+ 1731 0760 6394      		inc r6
+ 1732               	.LVL139:
+ 1733               	.L81:
+ 1734 0762 5E01      		movw r10,r28
+ 1735 0764 AA0C      		lsl r10
+ 1736 0766 BB1C      		rol r11
+ 1737               	.LVL140:
+ 1738 0768 4C01      		movw r8,r24
+ 1739 076a 880C      		lsl r8
+ 1740 076c 991C      		rol r9
+ 683:ST7735/lib/st7735.c ****   }
+ 684:ST7735/lib/st7735.c **** 
+ 685:ST7735/lib/st7735.c ****   // Bresenham condition for m < 1 (dy < dx)
+ 686:ST7735/lib/st7735.c ****   if (delta_y < delta_x) {
+ 1741               		.loc 1 686 0
+ 1742 076e C817      		cp r28,r24
+ 1743 0770 D907      		cpc r29,r25
+ 1744 0772 04F4      		brge .L87
+ 687:ST7735/lib/st7735.c ****     // calculate determinant
+ 688:ST7735/lib/st7735.c ****     D = (delta_y << 1) - delta_x;
+ 1745               		.loc 1 688 0
+ 1746 0774 E501      		movw r28,r10
+ 1747               	.LVL141:
+ 1748 0776 C81B      		sub r28,r24
+ 1749 0778 D90B      		sbc r29,r25
+ 1750               	.LVL142:
+ 1751               	.L93:
+ 689:ST7735/lib/st7735.c ****     // draw first pixel
+ 690:ST7735/lib/st7735.c ****     ST7735_DrawPixel (lcd, x1, y1, color);
+ 691:ST7735/lib/st7735.c ****     // check if x1 equal x2
+ 692:ST7735/lib/st7735.c ****     while (x1 != x2) {
+ 693:ST7735/lib/st7735.c ****       // update x1
+ 694:ST7735/lib/st7735.c ****       x1 += trace_x;
+ 695:ST7735/lib/st7735.c ****       // check if determinant is positive
+ 696:ST7735/lib/st7735.c ****       if (D >= 0) {
+ 697:ST7735/lib/st7735.c ****         // update y1
+ 698:ST7735/lib/st7735.c ****         y1 += trace_y;
+ 699:ST7735/lib/st7735.c ****         // update determinant
+ 700:ST7735/lib/st7735.c ****         D -= 2*delta_x;    
+ 701:ST7735/lib/st7735.c ****       }
+ 702:ST7735/lib/st7735.c ****       // update deteminant
+ 703:ST7735/lib/st7735.c ****       D += 2*delta_y;
+ 704:ST7735/lib/st7735.c ****       // draw next pixel
+ 705:ST7735/lib/st7735.c ****       ST7735_DrawPixel (lcd, x1, y1, color);
+ 1752               		.loc 1 705 0
+ 1753 077a 9701      		movw r18,r14
+ 1754 077c 412F      		mov r20,r17
+ 1755 077e 672D      		mov r22,r7
+ 1756 0780 C601      		movw r24,r12
+ 1757 0782 0E94 0000 		call ST7735_DrawPixel
+ 1758               	.LVL143:
+ 692:ST7735/lib/st7735.c ****       // update x1
+ 1759               		.loc 1 692 0
+ 1760 0786 7514      		cp r7,r5
+ 1761 0788 01F0      		breq .L92
+ 1762 078a 700E      		add r7,r16
+ 1763               	.LVL144:
+ 696:ST7735/lib/st7735.c ****         // update y1
+ 1764               		.loc 1 696 0
+ 1765 078c D7FD      		sbrc r29,7
+ 1766 078e 00C0      		rjmp .L84
+ 698:ST7735/lib/st7735.c ****         // update determinant
+ 1767               		.loc 1 698 0
+ 1768 0790 160D      		add r17,r6
+ 1769               	.LVL145:
+ 700:ST7735/lib/st7735.c ****       }
+ 1770               		.loc 1 700 0
+ 1771 0792 C819      		sub r28,r8
+ 1772 0794 D909      		sbc r29,r9
+ 1773               	.LVL146:
+ 1774               	.L84:
+ 703:ST7735/lib/st7735.c ****       // draw next pixel
+ 1775               		.loc 1 703 0
+ 1776 0796 CA0D      		add r28,r10
+ 1777 0798 DB1D      		adc r29,r11
+ 1778               	.LVL147:
+ 1779 079a 00C0      		rjmp .L93
+ 1780               	.LVL148:
+ 1781               	.L88:
+ 1782 079c 160D      		add r17,r6
+ 1783               	.LVL149:
+ 706:ST7735/lib/st7735.c ****     }
+ 707:ST7735/lib/st7735.c ****   // for m > 1 (dy > dx)    
+ 708:ST7735/lib/st7735.c ****   } else {
+ 709:ST7735/lib/st7735.c ****     // calculate determinant
+ 710:ST7735/lib/st7735.c ****     D = delta_y - (delta_x << 1);
+ 711:ST7735/lib/st7735.c ****     // draw first pixel
+ 712:ST7735/lib/st7735.c ****     ST7735_DrawPixel (lcd, x1, y1, color);
+ 713:ST7735/lib/st7735.c ****     // check if y2 equal y1
+ 714:ST7735/lib/st7735.c ****     while (y1 != y2) {
+ 715:ST7735/lib/st7735.c ****       // update y1
+ 716:ST7735/lib/st7735.c ****       y1 += trace_y;
+ 717:ST7735/lib/st7735.c ****       // check if determinant is positive
+ 718:ST7735/lib/st7735.c ****       if (D <= 0) {
+ 1784               		.loc 1 718 0
+ 1785 079e 1C16      		cp __zero_reg__,r28
+ 1786 07a0 1D06      		cpc __zero_reg__,r29
+ 1787 07a2 04F0      		brlt .L87
+ 719:ST7735/lib/st7735.c ****         // update y1
+ 720:ST7735/lib/st7735.c ****         x1 += trace_x;
+ 1788               		.loc 1 720 0
+ 1789 07a4 700E      		add r7,r16
+ 1790               	.LVL150:
+ 721:ST7735/lib/st7735.c ****         // update determinant
+ 722:ST7735/lib/st7735.c ****         D += 2*delta_y;    
+ 1791               		.loc 1 722 0
+ 1792 07a6 CA0D      		add r28,r10
+ 1793 07a8 DB1D      		adc r29,r11
+ 1794               	.LVL151:
+ 1795               	.L87:
+ 723:ST7735/lib/st7735.c ****       }
+ 724:ST7735/lib/st7735.c ****       // update deteminant
+ 725:ST7735/lib/st7735.c ****       D -= 2*delta_x;
+ 1796               		.loc 1 725 0
+ 1797 07aa C819      		sub r28,r8
+ 1798 07ac D909      		sbc r29,r9
+ 1799               	.LVL152:
+ 726:ST7735/lib/st7735.c ****       // draw next pixel
+ 727:ST7735/lib/st7735.c ****       ST7735_DrawPixel (lcd, x1, y1, color);
+ 1800               		.loc 1 727 0
+ 1801 07ae 9701      		movw r18,r14
+ 1802 07b0 412F      		mov r20,r17
+ 1803 07b2 672D      		mov r22,r7
+ 1804 07b4 C601      		movw r24,r12
+ 1805 07b6 0E94 0000 		call ST7735_DrawPixel
+ 1806               	.LVL153:
+ 714:ST7735/lib/st7735.c ****       // update y1
+ 1807               		.loc 1 714 0
+ 1808 07ba 1411      		cpse r17,r4
+ 1809 07bc 00C0      		rjmp .L88
+ 1810               	.L92:
+ 728:ST7735/lib/st7735.c ****     }
+ 729:ST7735/lib/st7735.c ****   }
+ 730:ST7735/lib/st7735.c ****   // success return
+ 731:ST7735/lib/st7735.c ****   return 1;
+ 732:ST7735/lib/st7735.c **** }
+ 1811               		.loc 1 732 0
+ 1812 07be 81E0      		ldi r24,lo8(1)
+ 1813               	/* epilogue start */
+ 1814 07c0 DF91      		pop r29
+ 1815 07c2 CF91      		pop r28
+ 1816               	.LVL154:
+ 1817 07c4 1F91      		pop r17
+ 1818               	.LVL155:
+ 1819 07c6 0F91      		pop r16
+ 1820 07c8 FF90      		pop r15
+ 1821 07ca EF90      		pop r14
+ 1822               	.LVL156:
+ 1823 07cc DF90      		pop r13
+ 1824 07ce CF90      		pop r12
+ 1825               	.LVL157:
+ 1826 07d0 BF90      		pop r11
+ 1827 07d2 AF90      		pop r10
+ 1828 07d4 9F90      		pop r9
+ 1829 07d6 8F90      		pop r8
+ 1830 07d8 7F90      		pop r7
+ 1831               	.LVL158:
+ 1832 07da 6F90      		pop r6
+ 1833 07dc 5F90      		pop r5
+ 1834               	.LVL159:
+ 1835 07de 4F90      		pop r4
+ 1836               	.LVL160:
+ 1837 07e0 0895      		ret
+ 1838               		.cfi_endproc
+ 1839               	.LFE25:
+ 1841               	.global	ST7735_DrawLineHorizontal
+ 1843               	ST7735_DrawLineHorizontal:
+ 1844               	.LFB26:
+ 733:ST7735/lib/st7735.c **** 
+ 734:ST7735/lib/st7735.c **** /**
+ 735:ST7735/lib/st7735.c ****  * @desc    Fast draw line horizontal
+ 736:ST7735/lib/st7735.c ****  *
+ 737:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 738:ST7735/lib/st7735.c ****  * @param   uint8_t xs - start position
+ 739:ST7735/lib/st7735.c ****  * @param   uint8_t xe - end position
+ 740:ST7735/lib/st7735.c ****  * @param   uint8_t y - position
+ 741:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 742:ST7735/lib/st7735.c ****  *
+ 743:ST7735/lib/st7735.c ****  * @return void
+ 744:ST7735/lib/st7735.c ****  */
+ 745:ST7735/lib/st7735.c **** void ST7735_DrawLineHorizontal (struct st7735 * lcd, uint8_t xs, uint8_t xe, uint8_t y, uint16_t co
+ 746:ST7735/lib/st7735.c **** {
+ 1845               		.loc 1 746 0
+ 1846               		.cfi_startproc
+ 1847               	.LVL161:
+ 1848 07e2 CF92      		push r12
+ 1849               	.LCFI70:
+ 1850               		.cfi_def_cfa_offset 3
+ 1851               		.cfi_offset 12, -2
+ 1852 07e4 DF92      		push r13
+ 1853               	.LCFI71:
+ 1854               		.cfi_def_cfa_offset 4
+ 1855               		.cfi_offset 13, -3
+ 1856 07e6 EF92      		push r14
+ 1857               	.LCFI72:
+ 1858               		.cfi_def_cfa_offset 5
+ 1859               		.cfi_offset 14, -4
+ 1860 07e8 FF92      		push r15
+ 1861               	.LCFI73:
+ 1862               		.cfi_def_cfa_offset 6
+ 1863               		.cfi_offset 15, -5
+ 1864 07ea 0F93      		push r16
+ 1865               	.LCFI74:
+ 1866               		.cfi_def_cfa_offset 7
+ 1867               		.cfi_offset 16, -6
+ 1868 07ec 1F93      		push r17
+ 1869               	.LCFI75:
+ 1870               		.cfi_def_cfa_offset 8
+ 1871               		.cfi_offset 17, -7
+ 1872 07ee CF93      		push r28
+ 1873               	.LCFI76:
+ 1874               		.cfi_def_cfa_offset 9
+ 1875               		.cfi_offset 28, -8
+ 1876 07f0 DF93      		push r29
+ 1877               	.LCFI77:
+ 1878               		.cfi_def_cfa_offset 10
+ 1879               		.cfi_offset 29, -9
+ 1880               	/* prologue: function */
+ 1881               	/* frame size = 0 */
+ 1882               	/* stack size = 8 */
+ 1883               	.L__stack_usage = 8
+ 1884 07f2 7C01      		movw r14,r24
+ 1885 07f4 D62F      		mov r29,r22
+ 1886 07f6 6801      		movw r12,r16
+ 1887 07f8 C62F      		mov r28,r22
+ 1888 07fa 6417      		cp r22,r20
+ 1889 07fc 00F4      		brsh .L95
+ 1890 07fe C42F      		mov r28,r20
+ 1891               	.L95:
+ 1892               	.LVL162:
+ 747:ST7735/lib/st7735.c ****   uint8_t temp;
+ 748:ST7735/lib/st7735.c ****   // check if start is > as end  
+ 749:ST7735/lib/st7735.c ****   if (xs > xe) {
+ 750:ST7735/lib/st7735.c ****     // temporary safe
+ 751:ST7735/lib/st7735.c ****     temp = xs;
+ 752:ST7735/lib/st7735.c ****     // start change for end
+ 753:ST7735/lib/st7735.c ****     xe = xs;
+ 754:ST7735/lib/st7735.c ****     // end change for start
+ 755:ST7735/lib/st7735.c ****     xs = temp;
+ 756:ST7735/lib/st7735.c ****   }
+ 757:ST7735/lib/st7735.c ****   // set window
+ 758:ST7735/lib/st7735.c ****   ST7735_SetWindow (lcd, xs, xe, y, y);
+ 1893               		.loc 1 758 0
+ 1894 0800 022F      		mov r16,r18
+ 1895               	.LVL163:
+ 1896 0802 4C2F      		mov r20,r28
+ 1897 0804 6D2F      		mov r22,r29
+ 1898 0806 C701      		movw r24,r14
+ 1899               	.LVL164:
+ 1900 0808 0E94 0000 		call ST7735_SetWindow
+ 1901               	.LVL165:
+ 759:ST7735/lib/st7735.c ****   // draw pixel by 565 mode
+ 760:ST7735/lib/st7735.c ****   ST7735_SendColor565 (lcd, color, xe - xs);
+ 1902               		.loc 1 760 0
+ 1903 080c 4C2F      		mov r20,r28
+ 1904 080e 50E0      		ldi r21,0
+ 1905 0810 4D1B      		sub r20,r29
+ 1906 0812 5109      		sbc r21,__zero_reg__
+ 1907 0814 B601      		movw r22,r12
+ 1908 0816 C701      		movw r24,r14
+ 1909               	/* epilogue start */
+ 761:ST7735/lib/st7735.c **** }
+ 1910               		.loc 1 761 0
+ 1911 0818 DF91      		pop r29
+ 1912               	.LVL166:
+ 1913 081a CF91      		pop r28
+ 1914               	.LVL167:
+ 1915 081c 1F91      		pop r17
+ 1916 081e 0F91      		pop r16
+ 1917               	.LVL168:
+ 1918 0820 FF90      		pop r15
+ 1919 0822 EF90      		pop r14
+ 1920               	.LVL169:
+ 1921 0824 DF90      		pop r13
+ 1922 0826 CF90      		pop r12
+ 1923               	.LVL170:
+ 760:ST7735/lib/st7735.c **** }
+ 1924               		.loc 1 760 0
+ 1925 0828 0C94 0000 		jmp ST7735_SendColor565
+ 1926               	.LVL171:
+ 1927               		.cfi_endproc
+ 1928               	.LFE26:
+ 1930               	.global	ST7735_DrawLineVertical
+ 1932               	ST7735_DrawLineVertical:
+ 1933               	.LFB27:
+ 762:ST7735/lib/st7735.c **** 
+ 763:ST7735/lib/st7735.c **** /**
+ 764:ST7735/lib/st7735.c ****  * @desc    Fast draw line vertical
+ 765:ST7735/lib/st7735.c ****  *
+ 766:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 767:ST7735/lib/st7735.c ****  * @param   uint8_t x - position
+ 768:ST7735/lib/st7735.c ****  * @param   uint8_t ys - start position
+ 769:ST7735/lib/st7735.c ****  * @param   uint8_t ye - end position
+ 770:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 771:ST7735/lib/st7735.c ****  *
+ 772:ST7735/lib/st7735.c ****  * @return  void
+ 773:ST7735/lib/st7735.c ****  */
+ 774:ST7735/lib/st7735.c **** void ST7735_DrawLineVertical (struct st7735 * lcd, uint8_t x, uint8_t ys, uint8_t ye, uint16_t colo
+ 775:ST7735/lib/st7735.c **** {
+ 1934               		.loc 1 775 0
+ 1935               		.cfi_startproc
+ 1936               	.LVL172:
+ 1937 082c CF92      		push r12
+ 1938               	.LCFI78:
+ 1939               		.cfi_def_cfa_offset 3
+ 1940               		.cfi_offset 12, -2
+ 1941 082e DF92      		push r13
+ 1942               	.LCFI79:
+ 1943               		.cfi_def_cfa_offset 4
+ 1944               		.cfi_offset 13, -3
+ 1945 0830 EF92      		push r14
+ 1946               	.LCFI80:
+ 1947               		.cfi_def_cfa_offset 5
+ 1948               		.cfi_offset 14, -4
+ 1949 0832 FF92      		push r15
+ 1950               	.LCFI81:
+ 1951               		.cfi_def_cfa_offset 6
+ 1952               		.cfi_offset 15, -5
+ 1953 0834 0F93      		push r16
+ 1954               	.LCFI82:
+ 1955               		.cfi_def_cfa_offset 7
+ 1956               		.cfi_offset 16, -6
+ 1957 0836 1F93      		push r17
+ 1958               	.LCFI83:
+ 1959               		.cfi_def_cfa_offset 8
+ 1960               		.cfi_offset 17, -7
+ 1961 0838 CF93      		push r28
+ 1962               	.LCFI84:
+ 1963               		.cfi_def_cfa_offset 9
+ 1964               		.cfi_offset 28, -8
+ 1965 083a DF93      		push r29
+ 1966               	.LCFI85:
+ 1967               		.cfi_def_cfa_offset 10
+ 1968               		.cfi_offset 29, -9
+ 1969               	/* prologue: function */
+ 1970               	/* frame size = 0 */
+ 1971               	/* stack size = 8 */
+ 1972               	.L__stack_usage = 8
+ 1973 083c 7C01      		movw r14,r24
+ 1974 083e D42F      		mov r29,r20
+ 1975 0840 6801      		movw r12,r16
+ 1976 0842 C42F      		mov r28,r20
+ 1977 0844 4217      		cp r20,r18
+ 1978 0846 00F4      		brsh .L97
+ 1979 0848 C22F      		mov r28,r18
+ 1980               	.L97:
+ 1981               	.LVL173:
+ 776:ST7735/lib/st7735.c ****   uint8_t temp;
+ 777:ST7735/lib/st7735.c ****   // check if start is > as end
+ 778:ST7735/lib/st7735.c ****   if (ys > ye) {
+ 779:ST7735/lib/st7735.c ****     // temporary safe
+ 780:ST7735/lib/st7735.c ****     temp = ys;
+ 781:ST7735/lib/st7735.c ****     // start change for end
+ 782:ST7735/lib/st7735.c ****     ye = ys;
+ 783:ST7735/lib/st7735.c ****     // end change for start
+ 784:ST7735/lib/st7735.c ****     ys = temp;
+ 785:ST7735/lib/st7735.c ****   }
+ 786:ST7735/lib/st7735.c ****   // set window
+ 787:ST7735/lib/st7735.c ****   ST7735_SetWindow (lcd, x, x, ys, ye);
+ 1982               		.loc 1 787 0
+ 1983 084a 0C2F      		mov r16,r28
+ 1984               	.LVL174:
+ 1985 084c 2D2F      		mov r18,r29
+ 1986 084e 462F      		mov r20,r22
+ 1987               	.LVL175:
+ 1988 0850 C701      		movw r24,r14
+ 1989               	.LVL176:
+ 1990 0852 0E94 0000 		call ST7735_SetWindow
+ 1991               	.LVL177:
+ 788:ST7735/lib/st7735.c ****   // draw pixel by 565 mode
+ 789:ST7735/lib/st7735.c ****   ST7735_SendColor565 (lcd, color, ye - ys);
+ 1992               		.loc 1 789 0
+ 1993 0856 4C2F      		mov r20,r28
+ 1994 0858 50E0      		ldi r21,0
+ 1995 085a 4D1B      		sub r20,r29
+ 1996 085c 5109      		sbc r21,__zero_reg__
+ 1997 085e B601      		movw r22,r12
+ 1998 0860 C701      		movw r24,r14
+ 1999               	/* epilogue start */
+ 790:ST7735/lib/st7735.c **** }
+ 2000               		.loc 1 790 0
+ 2001 0862 DF91      		pop r29
+ 2002               	.LVL178:
+ 2003 0864 CF91      		pop r28
+ 2004               	.LVL179:
+ 2005 0866 1F91      		pop r17
+ 2006 0868 0F91      		pop r16
+ 2007               	.LVL180:
+ 2008 086a FF90      		pop r15
+ 2009 086c EF90      		pop r14
+ 2010               	.LVL181:
+ 2011 086e DF90      		pop r13
+ 2012 0870 CF90      		pop r12
+ 2013               	.LVL182:
+ 789:ST7735/lib/st7735.c **** }
+ 2014               		.loc 1 789 0
+ 2015 0872 0C94 0000 		jmp ST7735_SendColor565
+ 2016               	.LVL183:
+ 2017               		.cfi_endproc
+ 2018               	.LFE27:
+ 2020               	.global	ST7735_DrawRectangle
+ 2022               	ST7735_DrawRectangle:
+ 2023               	.LFB28:
+ 791:ST7735/lib/st7735.c **** 
+ 792:ST7735/lib/st7735.c **** /**
+ 793:ST7735/lib/st7735.c ****  * @desc    Draw rectangle
+ 794:ST7735/lib/st7735.c ****  *
+ 795:ST7735/lib/st7735.c ****  * @param   struct st7735 *
+ 796:ST7735/lib/st7735.c ****  * @param   uint8_t x start position
+ 797:ST7735/lib/st7735.c ****  * @param   uint8_t x end position
+ 798:ST7735/lib/st7735.c ****  * @param   uint8_t y start position
+ 799:ST7735/lib/st7735.c ****  * @param   uint8_t y end position
+ 800:ST7735/lib/st7735.c ****  * @param   uint16_t color
+ 801:ST7735/lib/st7735.c ****  *
+ 802:ST7735/lib/st7735.c ****  * @return  void
+ 803:ST7735/lib/st7735.c ****  */
+ 804:ST7735/lib/st7735.c **** void ST7735_DrawRectangle (struct st7735 * lcd, uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye, uin
+ 805:ST7735/lib/st7735.c **** {
+ 2024               		.loc 1 805 0
+ 2025               		.cfi_startproc
+ 2026               	.LVL184:
+ 2027 0876 BF92      		push r11
+ 2028               	.LCFI86:
+ 2029               		.cfi_def_cfa_offset 3
+ 2030               		.cfi_offset 11, -2
+ 2031 0878 CF92      		push r12
+ 2032               	.LCFI87:
+ 2033               		.cfi_def_cfa_offset 4
+ 2034               		.cfi_offset 12, -3
+ 2035 087a DF92      		push r13
+ 2036               	.LCFI88:
+ 2037               		.cfi_def_cfa_offset 5
+ 2038               		.cfi_offset 13, -4
+ 2039 087c EF92      		push r14
+ 2040               	.LCFI89:
+ 2041               		.cfi_def_cfa_offset 6
+ 2042               		.cfi_offset 14, -5
+ 2043 087e FF92      		push r15
+ 2044               	.LCFI90:
+ 2045               		.cfi_def_cfa_offset 7
+ 2046               		.cfi_offset 15, -6
+ 2047 0880 0F93      		push r16
+ 2048               	.LCFI91:
+ 2049               		.cfi_def_cfa_offset 8
+ 2050               		.cfi_offset 16, -7
+ 2051 0882 1F93      		push r17
+ 2052               	.LCFI92:
+ 2053               		.cfi_def_cfa_offset 9
+ 2054               		.cfi_offset 17, -8
+ 2055 0884 CF93      		push r28
+ 2056               	.LCFI93:
+ 2057               		.cfi_def_cfa_offset 10
+ 2058               		.cfi_offset 28, -9
+ 2059 0886 DF93      		push r29
+ 2060               	.LCFI94:
+ 2061               		.cfi_def_cfa_offset 11
+ 2062               		.cfi_offset 29, -10
+ 2063               	/* prologue: function */
+ 2064               	/* frame size = 0 */
+ 2065               	/* stack size = 9 */
+ 2066               	.L__stack_usage = 9
+ 2067 0888 6C01      		movw r12,r24
+ 2068 088a B62E      		mov r11,r22
+ 2069 088c D42F      		mov r29,r20
+ 2070 088e 122F      		mov r17,r18
+ 2071 0890 C02F      		mov r28,r16
+ 806:ST7735/lib/st7735.c ****   uint8_t temp;
+ 807:ST7735/lib/st7735.c ****   // check if start is > as end  
+ 808:ST7735/lib/st7735.c ****   if (xs > xe) {
+ 2072               		.loc 1 808 0
+ 2073 0892 4617      		cp r20,r22
+ 2074 0894 00F4      		brsh .L99
+ 2075 0896 B42E      		mov r11,r20
+ 2076 0898 D62F      		mov r29,r22
+ 2077               	.L99:
+ 2078               	.LVL185:
+ 809:ST7735/lib/st7735.c ****     // temporary safe
+ 810:ST7735/lib/st7735.c ****     temp = xe;
+ 811:ST7735/lib/st7735.c ****     // start change for end
+ 812:ST7735/lib/st7735.c ****     xe = xs;
+ 813:ST7735/lib/st7735.c ****     // end change for start
+ 814:ST7735/lib/st7735.c ****     xs = temp;
+ 815:ST7735/lib/st7735.c ****   }
+ 816:ST7735/lib/st7735.c ****   // check if start is > as end
+ 817:ST7735/lib/st7735.c ****   if (ys > ye) {
+ 2079               		.loc 1 817 0
+ 2080 089a C117      		cp r28,r17
+ 2081 089c 00F4      		brsh .L100
+ 2082 089e 812F      		mov r24,r17
+ 2083               	.LVL186:
+ 2084 08a0 1C2F      		mov r17,r28
+ 2085 08a2 C82F      		mov r28,r24
+ 2086               	.L100:
+ 2087               	.LVL187:
+ 818:ST7735/lib/st7735.c ****     // temporary safe
+ 819:ST7735/lib/st7735.c ****     temp = ye;
+ 820:ST7735/lib/st7735.c ****     // start change for end
+ 821:ST7735/lib/st7735.c ****     ye = ys;
+ 822:ST7735/lib/st7735.c ****     // end change for start
+ 823:ST7735/lib/st7735.c ****     ys = temp;
+ 824:ST7735/lib/st7735.c ****   }
+ 825:ST7735/lib/st7735.c ****   // set window
+ 826:ST7735/lib/st7735.c ****   ST7735_SetWindow (lcd, xs, xe, ys, ye);
+ 2088               		.loc 1 826 0
+ 2089 08a4 0C2F      		mov r16,r28
+ 2090 08a6 212F      		mov r18,r17
+ 2091 08a8 4D2F      		mov r20,r29
+ 2092 08aa 6B2D      		mov r22,r11
+ 2093 08ac C601      		movw r24,r12
+ 2094 08ae 0E94 0000 		call ST7735_SetWindow
+ 2095               	.LVL188:
+ 827:ST7735/lib/st7735.c ****   // send color
+ 828:ST7735/lib/st7735.c ****   ST7735_SendColor565 (lcd, color, (xe-xs+1)*(ye-ys+1));  
+ 2096               		.loc 1 828 0
+ 2097 08b2 2D2F      		mov r18,r29
+ 2098 08b4 30E0      		ldi r19,0
+ 2099 08b6 2B19      		sub r18,r11
+ 2100 08b8 3109      		sbc r19,__zero_reg__
+ 2101 08ba 2F5F      		subi r18,-1
+ 2102 08bc 3F4F      		sbci r19,-1
+ 2103 08be 8C2F      		mov r24,r28
+ 2104 08c0 90E0      		ldi r25,0
+ 2105 08c2 811B      		sub r24,r17
+ 2106 08c4 9109      		sbc r25,__zero_reg__
+ 2107 08c6 0196      		adiw r24,1
+ 2108 08c8 289F      		mul r18,r24
+ 2109 08ca A001      		movw r20,r0
+ 2110 08cc 299F      		mul r18,r25
+ 2111 08ce 500D      		add r21,r0
+ 2112 08d0 389F      		mul r19,r24
+ 2113 08d2 500D      		add r21,r0
+ 2114 08d4 1124      		clr r1
+ 2115 08d6 B701      		movw r22,r14
+ 2116 08d8 C601      		movw r24,r12
+ 2117               	/* epilogue start */
+ 829:ST7735/lib/st7735.c **** }
+ 2118               		.loc 1 829 0
+ 2119 08da DF91      		pop r29
+ 2120               	.LVL189:
+ 2121 08dc CF91      		pop r28
+ 2122               	.LVL190:
+ 2123 08de 1F91      		pop r17
+ 2124               	.LVL191:
+ 2125 08e0 0F91      		pop r16
+ 2126               	.LVL192:
+ 2127 08e2 FF90      		pop r15
+ 2128 08e4 EF90      		pop r14
+ 2129               	.LVL193:
+ 2130 08e6 DF90      		pop r13
+ 2131 08e8 CF90      		pop r12
+ 2132               	.LVL194:
+ 2133 08ea BF90      		pop r11
+ 2134               	.LVL195:
+ 828:ST7735/lib/st7735.c **** }
+ 2135               		.loc 1 828 0
+ 2136 08ec 0C94 0000 		jmp ST7735_SendColor565
+ 2137               	.LVL196:
+ 2138               		.cfi_endproc
+ 2139               	.LFE28:
+ 2141               	.global	ST7735_DelayMs
+ 2143               	ST7735_DelayMs:
+ 2144               	.LFB29:
+ 830:ST7735/lib/st7735.c **** 
+ 831:ST7735/lib/st7735.c **** /**
+ 832:ST7735/lib/st7735.c ****  * @desc    Delay
+ 833:ST7735/lib/st7735.c ****  *
+ 834:ST7735/lib/st7735.c ****  * @param   uint8_t time in milliseconds / max 256ms
+ 835:ST7735/lib/st7735.c ****  *
+ 836:ST7735/lib/st7735.c ****  * @return  void
+ 837:ST7735/lib/st7735.c ****  */
+ 838:ST7735/lib/st7735.c **** void ST7735_DelayMs (uint8_t time)
+ 839:ST7735/lib/st7735.c **** {
+ 2145               		.loc 1 839 0
+ 2146               		.cfi_startproc
+ 2147               	.LVL197:
+ 2148               	/* prologue: function */
+ 2149               	/* frame size = 0 */
+ 2150               	/* stack size = 0 */
+ 2151               	.L__stack_usage = 0
+ 2152               	.L102:
+ 840:ST7735/lib/st7735.c ****   // loop through real time
+ 841:ST7735/lib/st7735.c ****   while (time--) {
+ 2153               		.loc 1 841 0
+ 2154 08f0 8823      		tst r24
+ 2155 08f2 01F0      		breq .L104
+ 2156               	.LVL198:
+ 2157               	.LBB22:
+ 2158               	.LBB23:
+ 2159               		.loc 2 187 0
+ 2160 08f4 EFE9      		ldi r30,lo8(3999)
+ 2161 08f6 FFE0      		ldi r31,hi8(3999)
+ 2162 08f8 3197      	1:	sbiw r30,1
+ 2163 08fa 01F4      		brne 1b
+ 2164 08fc 00C0      		rjmp .
+ 2165 08fe 0000      		nop
+ 2166 0900 8150      		subi r24,lo8(-(-1))
+ 2167               	.LVL199:
+ 2168 0902 00C0      		rjmp .L102
+ 2169               	.LVL200:
+ 2170               	.L104:
+ 2171               	/* epilogue start */
+ 2172               	.LBE23:
+ 2173               	.LBE22:
+ 842:ST7735/lib/st7735.c ****     // 1 s delay
+ 843:ST7735/lib/st7735.c ****     _delay_ms(1);
+ 844:ST7735/lib/st7735.c ****   }
+ 845:ST7735/lib/st7735.c **** }
+ 2174               		.loc 1 845 0
+ 2175 0904 0895      		ret
+ 2176               		.cfi_endproc
+ 2177               	.LFE29:
+ 2179               	.global	ST7735_Commands
+ 2181               	ST7735_Commands:
+ 2182               	.LFB11:
+ 192:ST7735/lib/st7735.c ****   uint8_t args;
+ 2183               		.loc 1 192 0
+ 2184               		.cfi_startproc
+ 2185               	.LVL201:
+ 2186 0906 9F92      		push r9
+ 2187               	.LCFI95:
+ 2188               		.cfi_def_cfa_offset 3
+ 2189               		.cfi_offset 9, -2
+ 2190 0908 AF92      		push r10
+ 2191               	.LCFI96:
+ 2192               		.cfi_def_cfa_offset 4
+ 2193               		.cfi_offset 10, -3
+ 2194 090a BF92      		push r11
+ 2195               	.LCFI97:
+ 2196               		.cfi_def_cfa_offset 5
+ 2197               		.cfi_offset 11, -4
+ 2198 090c CF92      		push r12
+ 2199               	.LCFI98:
+ 2200               		.cfi_def_cfa_offset 6
+ 2201               		.cfi_offset 12, -5
+ 2202 090e DF92      		push r13
+ 2203               	.LCFI99:
+ 2204               		.cfi_def_cfa_offset 7
+ 2205               		.cfi_offset 13, -6
+ 2206 0910 EF92      		push r14
+ 2207               	.LCFI100:
+ 2208               		.cfi_def_cfa_offset 8
+ 2209               		.cfi_offset 14, -7
+ 2210 0912 FF92      		push r15
+ 2211               	.LCFI101:
+ 2212               		.cfi_def_cfa_offset 9
+ 2213               		.cfi_offset 15, -8
+ 2214 0914 0F93      		push r16
+ 2215               	.LCFI102:
+ 2216               		.cfi_def_cfa_offset 10
+ 2217               		.cfi_offset 16, -9
+ 2218 0916 1F93      		push r17
+ 2219               	.LCFI103:
+ 2220               		.cfi_def_cfa_offset 11
+ 2221               		.cfi_offset 17, -10
+ 2222 0918 CF93      		push r28
+ 2223               	.LCFI104:
+ 2224               		.cfi_def_cfa_offset 12
+ 2225               		.cfi_offset 28, -11
+ 2226 091a DF93      		push r29
+ 2227               	.LCFI105:
+ 2228               		.cfi_def_cfa_offset 13
+ 2229               		.cfi_offset 29, -12
+ 2230               	/* prologue: function */
+ 2231               	/* frame size = 0 */
+ 2232               	/* stack size = 11 */
+ 2233               	.L__stack_usage = 11
+ 2234 091c 7C01      		movw r14,r24
+ 2235               	.LBB24:
+ 196:ST7735/lib/st7735.c **** 
+ 2236               		.loc 1 196 0
+ 2237 091e EB01      		movw r28,r22
+ 2238 0920 2196      		adiw r28,1
+ 2239               	.LVL202:
+ 2240 0922 FB01      		movw r30,r22
+ 2241               	/* #APP */
+ 2242               	 ;  196 "ST7735/lib/st7735.c" 1
+ 2243 0924 1491      		lpm r17, Z
+ 2244               		
+ 2245               	 ;  0 "" 2
+ 2246               	.LVL203:
+ 2247               	/* #NOAPP */
+ 2248               	.L106:
+ 2249               	.LBE24:
+ 199:ST7735/lib/st7735.c **** 
+ 2250               		.loc 1 199 0
+ 2251 0926 1123      		tst r17
+ 2252 0928 01F0      		breq .L110
+ 2253               	.LVL204:
+ 2254               	.LBB25:
+ 202:ST7735/lib/st7735.c ****     // 2nd arg - delay time
+ 2255               		.loc 1 202 0
+ 2256 092a FE01      		movw r30,r28
+ 2257               	/* #APP */
+ 2258               	 ;  202 "ST7735/lib/st7735.c" 1
+ 2259 092c 9490      		lpm r9, Z
+ 2260               		
+ 2261               	 ;  0 "" 2
+ 2262               	.LVL205:
+ 2263               	/* #NOAPP */
+ 2264               	.LBE25:
+ 2265               	.LBB26:
+ 204:ST7735/lib/st7735.c ****     // 3th arg - command
+ 2266               		.loc 1 204 0
+ 2267 092e 3196      		adiw r30,1
+ 2268               	.LVL206:
+ 2269               	/* #APP */
+ 2270               	 ;  204 "ST7735/lib/st7735.c" 1
+ 2271 0930 0491      		lpm r16, Z
+ 2272               		
+ 2273               	 ;  0 "" 2
+ 2274               	.LVL207:
+ 2275               	/* #NOAPP */
+ 2276               	.LBE26:
+ 2277               	.LBB27:
+ 206:ST7735/lib/st7735.c **** 
+ 2278               		.loc 1 206 0
+ 2279 0932 5E01      		movw r10,r28
+ 2280 0934 F3E0      		ldi r31,3
+ 2281 0936 AF0E      		add r10,r31
+ 2282 0938 B11C      		adc r11,__zero_reg__
+ 2283               	.LVL208:
+ 2284               	.LBE27:
+ 2285               	.LBB28:
+ 204:ST7735/lib/st7735.c ****     // 3th arg - command
+ 2286               		.loc 1 204 0
+ 2287 093a FE01      		movw r30,r28
+ 2288               	.LVL209:
+ 2289 093c 3296      		adiw r30,2
+ 2290               	.LVL210:
+ 2291               	.LBE28:
+ 2292               	.LBB29:
+ 206:ST7735/lib/st7735.c **** 
+ 2293               		.loc 1 206 0
+ 2294               	/* #APP */
+ 2295               	 ;  206 "ST7735/lib/st7735.c" 1
+ 2296 093e 6491      		lpm r22, Z
+ 2297               		
+ 2298               	 ;  0 "" 2
+ 2299               	.LVL211:
+ 2300               	/* #NOAPP */
+ 2301               	.LBE29:
+ 209:ST7735/lib/st7735.c ****     // send arguments
+ 2302               		.loc 1 209 0
+ 2303 0940 C701      		movw r24,r14
+ 2304 0942 0E94 0000 		call ST7735_CommandSend
+ 2305               	.LVL212:
+ 211:ST7735/lib/st7735.c ****       // send argument
+ 2306               		.loc 1 211 0
+ 2307 0946 C92D      		mov r28,r9
+ 2308               	.LVL213:
+ 2309 0948 6501      		movw r12,r10
+ 2310               	.LVL214:
+ 2311               	.L107:
+ 2312 094a CC23      		tst r28
+ 2313 094c 01F0      		breq .L111
+ 2314               	.LVL215:
+ 2315               	.LBB30:
+ 213:ST7735/lib/st7735.c ****     }
+ 2316               		.loc 1 213 0
+ 2317 094e F601      		movw r30,r12
+ 2318               	/* #APP */
+ 2319               	 ;  213 "ST7735/lib/st7735.c" 1
+ 2320 0950 6491      		lpm r22, Z
+ 2321               		
+ 2322               	 ;  0 "" 2
+ 2323               	.LVL216:
+ 2324               	/* #NOAPP */
+ 2325               	.LBE30:
+ 2326 0952 C701      		movw r24,r14
+ 2327 0954 0E94 0000 		call ST7735_Data8BitsSend
+ 2328               	.LVL217:
+ 2329 0958 C150      		subi r28,lo8(-(-1))
+ 2330               	.LVL218:
+ 2331 095a C601      		movw r24,r12
+ 2332 095c 0196      		adiw r24,1
+ 2333               	.LVL219:
+ 2334 095e 6C01      		movw r12,r24
+ 2335               	.LVL220:
+ 2336 0960 00C0      		rjmp .L107
+ 2337               	.LVL221:
+ 2338               	.L111:
+ 2339 0962 E501      		movw r28,r10
+ 2340               	.LVL222:
+ 2341 0964 C90D      		add r28,r9
+ 2342 0966 D11D      		adc r29,__zero_reg__
+ 216:ST7735/lib/st7735.c ****   }
+ 2343               		.loc 1 216 0
+ 2344 0968 802F      		mov r24,r16
+ 2345 096a 0E94 0000 		call ST7735_DelayMs
+ 2346               	.LVL223:
+ 2347 096e 1150      		subi r17,lo8(-(-1))
+ 2348               	.LVL224:
+ 2349 0970 00C0      		rjmp .L106
+ 2350               	.LVL225:
+ 2351               	.L110:
+ 2352               	/* epilogue start */
+ 218:ST7735/lib/st7735.c **** 
+ 2353               		.loc 1 218 0
+ 2354 0972 DF91      		pop r29
+ 2355 0974 CF91      		pop r28
+ 2356               	.LVL226:
+ 2357 0976 1F91      		pop r17
+ 2358               	.LVL227:
+ 2359 0978 0F91      		pop r16
+ 2360 097a FF90      		pop r15
+ 2361 097c EF90      		pop r14
+ 2362               	.LVL228:
+ 2363 097e DF90      		pop r13
+ 2364 0980 CF90      		pop r12
+ 2365 0982 BF90      		pop r11
+ 2366 0984 AF90      		pop r10
+ 2367 0986 9F90      		pop r9
+ 2368 0988 0895      		ret
+ 2369               		.cfi_endproc
+ 2370               	.LFE11:
+ 2372               	.global	ST7735_Init
+ 2374               	ST7735_Init:
+ 2375               	.LFB10:
+ 172:ST7735/lib/st7735.c ****   // init pins
+ 2376               		.loc 1 172 0
+ 2377               		.cfi_startproc
+ 2378               	.LVL229:
+ 2379 098a CF93      		push r28
+ 2380               	.LCFI106:
+ 2381               		.cfi_def_cfa_offset 3
+ 2382               		.cfi_offset 28, -2
+ 2383 098c DF93      		push r29
+ 2384               	.LCFI107:
+ 2385               		.cfi_def_cfa_offset 4
+ 2386               		.cfi_offset 29, -3
+ 2387               	/* prologue: function */
+ 2388               	/* frame size = 0 */
+ 2389               	/* stack size = 2 */
+ 2390               	.L__stack_usage = 2
+ 2391 098e EC01      		movw r28,r24
+ 174:ST7735/lib/st7735.c ****   // init SPI
+ 2392               		.loc 1 174 0
+ 2393 0990 0E94 0000 		call ST7735_Pins_Init
+ 2394               	.LVL230:
+ 176:ST7735/lib/st7735.c ****   // hardware reset
+ 2395               		.loc 1 176 0
+ 2396 0994 0E94 0000 		call ST7735_SPI_Init
+ 2397               	.LVL231:
+ 178:ST7735/lib/st7735.c ****   // load list of commands
+ 2398               		.loc 1 178 0
+ 2399 0998 8E81      		ldd r24,Y+6
+ 2400 099a 9F81      		ldd r25,Y+7
+ 2401 099c 0E94 0000 		call ST7735_Reset
+ 2402               	.LVL232:
+ 180:ST7735/lib/st7735.c **** }
+ 2403               		.loc 1 180 0
+ 2404 09a0 60E0      		ldi r22,lo8(INIT_ST7735B)
+ 2405 09a2 70E0      		ldi r23,hi8(INIT_ST7735B)
+ 2406 09a4 CE01      		movw r24,r28
+ 2407               	/* epilogue start */
+ 181:ST7735/lib/st7735.c **** 
+ 2408               		.loc 1 181 0
+ 2409 09a6 DF91      		pop r29
+ 2410 09a8 CF91      		pop r28
+ 2411               	.LVL233:
+ 180:ST7735/lib/st7735.c **** }
+ 2412               		.loc 1 180 0
+ 2413 09aa 0C94 0000 		jmp ST7735_Commands
+ 2414               	.LVL234:
+ 2415               		.cfi_endproc
+ 2416               	.LFE10:
+ 2418               	.global	INIT_ST7735B
+ 2419               		.section	.progmem.data,"a",@progbits
+ 2422               	INIT_ST7735B:
+ 2423 0000 05        		.byte	5
+ 2424 0001 00        		.byte	0
+ 2425 0002 96        		.byte	-106
+ 2426 0003 01        		.byte	1
+ 2427 0004 00        		.byte	0
+ 2428 0005 C8        		.byte	-56
+ 2429 0006 11        		.byte	17
+ 2430 0007 01        		.byte	1
+ 2431 0008 0A        		.byte	10
+ 2432 0009 3A        		.byte	58
+ 2433 000a 05        		.byte	5
+ 2434 000b 01        		.byte	1
+ 2435 000c 00        		.byte	0
+ 2436 000d 36        		.byte	54
+ 2437 000e A0        		.byte	-96
+ 2438 000f 00        		.byte	0
+ 2439 0010 C8        		.byte	-56
+ 2440 0011 29        		.byte	41
+ 2441               	.global	cacheMemIndexCol
+ 2442               		.section .bss
+ 2445               	cacheMemIndexCol:
+ 2446 0000 0000      		.zero	2
+ 2447               	.global	cacheMemIndexRow
+ 2450               	cacheMemIndexRow:
+ 2451 0002 0000      		.zero	2
+ 2452               		.text
+ 2453               	.Letext0:
+ 2454               		.file 3 "/usr/lib/avr/include/stdint.h"
+ 2455               		.file 4 "ST7735/lib/st7735.h"
+ 2456               		.file 5 "ST7735/lib/font.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 st7735.c
+     /tmp/cc2kXUwU.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cc2kXUwU.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cc2kXUwU.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cc2kXUwU.s:5      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cc2kXUwU.s:6      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cc2kXUwU.s:12     .text:0000000000000000 ST7735_Reset
+     /tmp/cc2kXUwU.s:126    .text:000000000000008e ST7735_SPI_Init
+     /tmp/cc2kXUwU.s:156    .text:00000000000000a6 ST7735_Pins_Init
+     /tmp/cc2kXUwU.s:275    .text:0000000000000146 ST7735_CommandSend
+     /tmp/cc2kXUwU.s:373    .text:00000000000001c0 ST7735_Data8BitsSend
+     /tmp/cc2kXUwU.s:470    .text:0000000000000238 ST7735_Data16BitsSend
+     /tmp/cc2kXUwU.s:574    .text:00000000000002b8 ST7735_SetWindow
+     /tmp/cc2kXUwU.s:685    .text:0000000000000326 ST7735_SendColor565
+     /tmp/cc2kXUwU.s:769    .text:0000000000000366 ST7735_DrawPixel
+     /tmp/cc2kXUwU.s:831    .text:0000000000000394 ST7735_RAM_Content_Show
+     /tmp/cc2kXUwU.s:849    .text:000000000000039a ST7735_RAM_Content_Hide
+     /tmp/cc2kXUwU.s:867    .text:00000000000003a0 ST7735_ClearScreen
+     /tmp/cc2kXUwU.s:928    .text:00000000000003d0 ST7735_DrawChar
+     /tmp/cc2kXUwU.s:2450   .bss:0000000000000002 cacheMemIndexRow
+     /tmp/cc2kXUwU.s:2445   .bss:0000000000000000 cacheMemIndexCol
+     /tmp/cc2kXUwU.s:1389   .text:0000000000000636 ST7735_SetPosition
+     /tmp/cc2kXUwU.s:1440   .text:000000000000066a ST7735_CheckPosition
+     /tmp/cc2kXUwU.s:1481   .text:0000000000000690 ST7735_DrawString
+     /tmp/cc2kXUwU.s:1605   .text:0000000000000704 ST7735_DrawLine
+     /tmp/cc2kXUwU.s:1843   .text:00000000000007e2 ST7735_DrawLineHorizontal
+     /tmp/cc2kXUwU.s:1932   .text:000000000000082c ST7735_DrawLineVertical
+     /tmp/cc2kXUwU.s:2022   .text:0000000000000876 ST7735_DrawRectangle
+     /tmp/cc2kXUwU.s:2143   .text:00000000000008f0 ST7735_DelayMs
+     /tmp/cc2kXUwU.s:2181   .text:0000000000000906 ST7735_Commands
+     /tmp/cc2kXUwU.s:2374   .text:000000000000098a ST7735_Init
+     /tmp/cc2kXUwU.s:2422   .progmem.data:0000000000000000 INIT_ST7735B
+
+UNDEFINED SYMBOLS
+FONTS
+__do_clear_bss

@@ -237,7 +237,7 @@ enum e_state {UpdateConsigne,
     SleepMode,
     NoIron,
     };
-enum e_state state = UpdateConsigne;//ProcessCommand;
+enum e_state state = ProcessCommand;
 
 int counts = 0;
 void encoder_init(void){
@@ -354,15 +354,10 @@ int get_counts(void){
 uint8_t line1[]   = "Starting up ...";
 uint8_t line2[]   = "               ";
 void update_screen(void){
-    //ST7735_RAM_Content_Hide (&lcd1);
-    //ST7735_ClearScreen (&lcd1, BLACK);
     ST7735_SetPosition (5, 5);
-    ST7735_DrawRectangle(&lcd1, 5, MAX_X, 0,20, BLACK);
-    //ST7735_DrawLineHorizontal (&lcd1, 5, MAX_X - 5, 27, WHITE);
-    ST7735_DrawString (&lcd1, (char*)line1,WHITE, X1);
+    ST7735_DrawString (&lcd1, (char*)line1,WHITE, X3);
     ST7735_SetPosition (5, 30);
-    ST7735_DrawString (&lcd1, (char*)line2, WHITE, X1);
-    //ST7735_RAM_Content_Show(&lcd1);
+    ST7735_DrawString (&lcd1, (char*)line2, WHITE, X3);
 
 }
 
@@ -410,17 +405,17 @@ int main(void)
                 iron_off();
 
                 Consigne = DEFAULT_TEMP + 2*get_counts();
-                snprintf((char*)line2,16," %i C",(int)temp);
+                snprintf((char*)line2,16," %i C    ",(int)temp);
                 if((millis()-blinky)>50.f){
                     blinky =millis();
                     onoff = !onoff;
                 }
                 if(onoff){
-                    snprintf((char*)line1,16,"    : %i C",Consigne);
+                    snprintf((char*)line1,16,"    : %i C    ",Consigne);
                     update_screen();
                 }
                   else{
-                    snprintf((char*)line1,16,"Set : %i C",Consigne);
+                    snprintf((char*)line1,16,"Set : %i C    ",Consigne);
                     update_screen();
                 }
 
@@ -428,7 +423,7 @@ int main(void)
 
             case NoIron:
                 // Update display content
-                snprintf((char*)line2,16,"No Iron");
+                snprintf((char*)line2,16,"No Iron        ");
                 update_screen();
                 if(temp>=0.0){
                     state=ProcessCommand;
@@ -437,7 +432,7 @@ int main(void)
                 break;
             case SleepMode:
                 // Update display content
-                snprintf((char*)line2,16," %i C   %s",(int)temp,
+                snprintf((char*)line2,16," %i C   %s    ",(int)temp,
                         "SLEEP");
                 update_screen();
                 iron_off();
@@ -448,8 +443,8 @@ int main(void)
 
                 // Update display content
                 if((millis()-freq_display)>20.f){
-                    snprintf((char*)line1,16,"Set : %i C",Consigne);
-                    snprintf((char*)line2,16," %i C",(int)temp);
+                    snprintf((char*)line1,16,"Set : %i C    ",Consigne);
+                    snprintf((char*)line2,16," %i C    ",(int)temp);
                     update_screen();
                     freq_display = millis();
                 }
