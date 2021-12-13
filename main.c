@@ -237,7 +237,7 @@ enum e_state {UpdateConsigne,
     SleepMode,
     NoIron,
     };
-enum e_state state = ProcessCommand;
+enum e_state state = UpdateConsigne;//ProcessCommand;
 
 int counts = 0;
 void encoder_init(void){
@@ -354,11 +354,15 @@ int get_counts(void){
 uint8_t line1[]   = "Starting up ...";
 uint8_t line2[]   = "               ";
 void update_screen(void){
+    //ST7735_RAM_Content_Hide (&lcd1);
     //ST7735_ClearScreen (&lcd1, BLACK);
     ST7735_SetPosition (5, 5);
-    ST7735_DrawString (&lcd1, (char*)line1,WHITE, X3);
-    ST7735_SetPosition (5, 40);
-    ST7735_DrawString (&lcd1, (char*)line2, WHITE, X3);
+    ST7735_DrawRectangle(&lcd1, 5, MAX_X, 0,20, BLACK);
+    //ST7735_DrawLineHorizontal (&lcd1, 5, MAX_X - 5, 27, WHITE);
+    ST7735_DrawString (&lcd1, (char*)line1,WHITE, X1);
+    ST7735_SetPosition (5, 30);
+    ST7735_DrawString (&lcd1, (char*)line2, WHITE, X1);
+    //ST7735_RAM_Content_Show(&lcd1);
 
 }
 
@@ -415,7 +419,7 @@ int main(void)
                     snprintf((char*)line1,16,"    : %i C",Consigne);
                     update_screen();
                 }
-                else{
+                  else{
                     snprintf((char*)line1,16,"Set : %i C",Consigne);
                     update_screen();
                 }
